@@ -1,22 +1,33 @@
+import { fileURLToPath } from "node:url";
 import {
   Client,
   Events,
   GatewayIntentBits,
   Partials,
 } from "discord.js";
+import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { loadConfig } from "./config.js";
 import { createDb } from "./db/index.js";
 import { ensureGuild } from "./discord/gates.js";
 import { handleInteraction, type BotContext } from "./discord/interactions.js";
+import { registerCommands } from "./discord/register.js";
 import { findAnnounceChannel, welcomeMessage } from "./discord/welcome.js";
 import { GitHubService } from "./github/app.js";
 import { createInstallState } from "./github/install-state.js";
 import { buildServer } from "./http/server.js";
+import { killStaleContainers, recoverStaleTasks } from "./orchestrator/recovery.js";
 import { TaskOrchestrator } from "./orchestrator/taskRunner.js";
 import { DockerWorkspace } from "./orchestrator/workspace.js";
 
 const config = loadConfig();
 const db = createDb(config.DATABASE_URL, config.DATABASE_SSL);
+
+// Run migrations on every boot (idempotent). Keeps DB schema in sync without
+// a separate migration step in the deploy pipeline.
+await migrate(db, {
+  migrationsFolder: fileURLToPath(new URL("../drizzle", import.meta.url)),
+});
+
 const github = new GitHubService(config);
 const orchestrator = new TaskOrchestrator(
   db,
@@ -25,6 +36,9 @@ const orchestrator = new TaskOrchestrator(
   config,
 );
 const ctx: BotContext = { db, config, github, orchestrator };
+
+// Register slash commands (global PUT, idempotent — safe to run on every boot).
+await registerCommands(config);
 
 const client = new Client({
   intents: [
@@ -35,11 +49,19 @@ const client = new Client({
   partials: [Partials.Channel],
 });
 
-client.on(Events.ClientReady, (ready) => {
+client.on(Events.ClientReady, async (ready) => {
   console.log(`Logged in as ${ready.user.tag}`);
+
+  // Kill any containers left over from before the restart, then mark their
+  // tasks failed and refund quota. Notifications require the Discord client.
+  await killStaleContainers();
+  await recoverStaleTasks(db, async (threadId, message) => {
+    const ch = await ready.channels.fetch(threadId).catch(() => null);
+    if (ch?.isThread()) await ch.send(message).catch(() => {});
+  });
 });
 
-// Onboarding step 1: bot joins -> welcome message with Connect GitHub button.
+// Onboarding step 1: bot joins -> welcome message with Connect GitHub + LLM buttons.
 client.on(Events.GuildCreate, async (guild) => {
   await ensureGuild(db, guild.id, config.DEFAULT_TASK_CAP);
   const channel = findAnnounceChannel(guild);
@@ -76,7 +98,7 @@ const server = buildServer({
     const guild = await client.guilds.fetch(guildId);
     const channel = findAnnounceChannel(guild);
     await channel?.send(
-      "✅ GitHub connected. Pick a repo with `/repo set`, then type `/code` in any channel.",
+      "✅ GitHub connected. Next: run `/connect llm` to add your LLM credential, then `/repo set` in a channel.",
     );
   },
 });

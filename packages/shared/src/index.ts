@@ -18,6 +18,18 @@ export const transcriptEntrySchema = z.object({
 });
 export type TranscriptEntry = z.infer<typeof transcriptEntrySchema>;
 
+export const llmAuthSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("anthropic_api_key"), token: z.string().min(1) }),
+  z.object({ type: z.literal("claude_oauth"), token: z.string().min(1) }),
+  z.object({
+    type: z.literal("custom"),
+    token: z.string().min(1),
+    baseUrl: z.string().url(),
+    model: z.string().min(1),
+  }),
+]);
+export type LlmAuth = z.infer<typeof llmAuthSchema>;
+
 export const taskSpecSchema = z.object({
   taskId: z.string(),
   /** "owner/name" */
@@ -35,11 +47,11 @@ export const taskSpecSchema = z.object({
   /**
    * Secrets travel here (stdin), never as container env vars: env is visible in
    * `docker inspect` and is inherited by every child the agent spawns. The
-   * runner reads these, uses the GitHub token only for its own git calls, and
-   * sets ANTHROPIC_API_KEY just before invoking the SDK.
+   * runner reads this, uses the GitHub token only for its own git calls, and
+   * sets exactly one credential env set just before invoking the SDK.
    */
   githubToken: z.string().min(1),
-  anthropicApiKey: z.string().min(1),
+  llmAuth: llmAuthSchema,
 });
 export type TaskSpec = z.infer<typeof taskSpecSchema>;
 

@@ -23,9 +23,10 @@ export function welcomeMessage(installUrl: string): {
             "I run coding tasks against your GitHub repos, right from Discord.",
             "",
             "**Setup (about a minute):**",
-            "1. Click **Connect GitHub** below and pick the repos I may touch.",
-            "2. Run `/repo set` in a channel to choose its repo.",
-            "3. Type `/code <task>` — I'll work in a thread and open a PR.",
+            "1. Click **Connect GitHub** and pick the repos I may touch.",
+            "2. Click **Connect LLM** and paste your Anthropic API key or Claude subscription token.",
+            "3. Run `/repo set` in a channel to choose its active repo.",
+            "4. Type `/code <task>` — I'll work in a thread and open a PR.",
           ].join("\n"),
         ),
     ],
@@ -35,6 +36,10 @@ export function welcomeMessage(installUrl: string): {
           .setLabel("Connect GitHub")
           .setStyle(ButtonStyle.Link)
           .setURL(installUrl),
+        new ButtonBuilder()
+          .setCustomId("aw:llm:setup")
+          .setLabel("Connect LLM")
+          .setStyle(ButtonStyle.Primary),
       ),
     ],
   };

@@ -6,6 +6,7 @@ import {
   type ButtonInteraction,
   type ChatInputCommandInteraction,
   type Interaction,
+  type ModalSubmitInteraction,
   type ThreadChannel,
 } from "discord.js";
 import { and, eq, inArray } from "drizzle-orm";
@@ -14,8 +15,16 @@ import { schema, type Db } from "../db/index.js";
 import type { Guild } from "../db/schema.js";
 import type { GitHubService } from "../github/app.js";
 import { createInstallState } from "../github/install-state.js";
+import { resolveLlmAuth } from "../llm/credentials.js";
 import type { TaskOrchestrator } from "../orchestrator/taskRunner.js";
+import { bumpUsage } from "../orchestrator/usage.js";
 import { canInvoke, capState, ensureGuild } from "./gates.js";
+import {
+  handleConnectCommand,
+  handleLlmButton,
+  handleLlmModal,
+  handleSetupCommand,
+} from "./connect.js";
 import { welcomeMessage } from "./welcome.js";
 
 export interface BotContext {
@@ -36,11 +45,15 @@ export async function handleInteraction(
       await handleAutocomplete(ctx, interaction);
     } else if (interaction.isButton()) {
       await handleButton(ctx, interaction);
+    } else if (interaction.isModalSubmit()) {
+      await handleModal(ctx, interaction);
     }
   } catch (err) {
     console.error("interaction failed", err);
     if (
-      (interaction.isChatInputCommand() || interaction.isButton()) &&
+      (interaction.isChatInputCommand() ||
+        interaction.isButton() ||
+        interaction.isModalSubmit()) &&
       !interaction.replied &&
       !interaction.deferred
     ) {
@@ -78,6 +91,10 @@ async function handleCommand(
       return handleCancel(ctx, interaction);
     case "config":
       return handleConfig(ctx, interaction);
+    case "connect":
+      return handleConnectCommand(ctx, interaction);
+    case "setup":
+      return handleSetupCommand(ctx, interaction);
   }
 }
 
@@ -170,30 +187,15 @@ async function checkPreconditions(
     );
     return `GitHub isn't connected yet. An admin needs to [install the GitHub App](${ctx.github.installUrl(state)}).`;
   }
+  const llmRes = await resolveLlmAuth(ctx.db, ctx.config, guild.id);
+  if (!llmRes.auth) {
+    return `LLM not connected. An admin needs to run \`/connect llm\`.`;
+  }
   const cap = capState(guild, mode);
   if (cap.exceeded) {
     return `This server hit its monthly ${mode === "code" ? "task" : "question"} limit (${cap.used}/${cap.cap}). Resets ${guild.capResetAt.toDateString()}.`;
   }
   return null;
-}
-
-async function bumpUsage(
-  db: Db,
-  guildId: string,
-  mode: "code" | "ask",
-): Promise<void> {
-  const guild = await db.query.guilds.findFirst({
-    where: eq(schema.guilds.id, guildId),
-  });
-  if (!guild) return;
-  await db
-    .update(schema.guilds)
-    .set(
-      mode === "code"
-        ? { tasksUsedThisMonth: guild.tasksUsedThisMonth + 1 }
-        : { asksUsedThisMonth: guild.asksUsedThisMonth + 1 },
-    )
-    .where(eq(schema.guilds.id, guildId));
 }
 
 const repoCache = new Map<number, { repos: string[]; fetchedAt: number }>();
@@ -369,8 +371,21 @@ async function handleButton(
   ctx: BotContext,
   interaction: ButtonInteraction,
 ): Promise<void> {
-  const [ns, action, taskId] = interaction.customId.split(":");
-  if (ns !== "aw" || !taskId) return;
+  const parts = interaction.customId.split(":");
+  const [ns, action] = parts;
+  if (ns !== "aw" || !action) return;
+
+  // Route LLM buttons to connect handler (no taskId required)
+  if (action === "llm") {
+    const subAction = parts[2] ?? "";
+    await handleLlmButton(ctx, interaction, subAction);
+    return;
+  }
+
+  // Task action buttons (merge, iterate) require a taskId
+  const taskId = parts[2];
+  if (!taskId) return;
+
   const task = await ctx.db.query.tasks.findFirst({
     where: eq(schema.tasks.id, taskId),
   });
@@ -478,6 +493,17 @@ async function handleButton(
         await thread.send("⚠️ Iteration crashed before finishing.").catch(() => {});
       });
   }
+}
+
+async function handleModal(
+  ctx: BotContext,
+  interaction: ModalSubmitInteraction,
+): Promise<void> {
+  if (!interaction.inGuild() || !interaction.guildId) return;
+  const parts = interaction.customId.split(":");
+  const [ns, type, providerType] = parts;
+  if (ns !== "aw" || type !== "llm_modal" || !providerType) return;
+  await handleLlmModal(ctx, interaction, providerType);
 }
 
 export { welcomeMessage };

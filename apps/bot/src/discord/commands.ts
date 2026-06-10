@@ -20,6 +20,22 @@ export const commands = [
         .setRequired(true),
     ),
   new SlashCommandBuilder()
+    .setName("connect")
+    .setDescription("Connect services to AnywhereCode")
+    .addSubcommand((sub) =>
+      sub
+        .setName("llm")
+        .setDescription(
+          "Connect your LLM (Anthropic API key, Claude subscription, or compatible provider)",
+        ),
+    )
+    .addSubcommand((sub) =>
+      sub.setName("github").setDescription("Connect GitHub repositories"),
+    ),
+  new SlashCommandBuilder()
+    .setName("setup")
+    .setDescription("Show the connection status and usage for this server"),
+  new SlashCommandBuilder()
     .setName("repo")
     .setDescription("Manage the repo this channel works on")
     .addSubcommand((sub) =>

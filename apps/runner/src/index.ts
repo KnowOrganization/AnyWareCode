@@ -7,7 +7,7 @@ import {
 } from "@anywherecode/shared";
 import { ClaudeAgent } from "./agent.js";
 import { checkoutTaskBranch, cloneRepo, commitAndPush } from "./git.js";
-import { emit, readLines } from "./io.js";
+import { emit, readLines, redactSecrets, registerSecret } from "./io.js";
 
 const WORK_ROOT = "/work";
 
@@ -17,15 +17,35 @@ async function main(): Promise<void> {
   if (first.done) throw new Error("no TaskSpec on stdin");
   const spec: TaskSpec = taskSpecSchema.parse(JSON.parse(first.value));
 
-  // Secrets arrive on stdin (not env). The GitHub token stays a local value so
-  // the agent's tools never inherit it; the Anthropic key has to be in env for
-  // the SDK's child process, so it's set as late as possible.
-  const token = spec.githubToken;
-  process.env.ANTHROPIC_API_KEY = spec.anthropicApiKey;
+  // Register secrets for redaction before any error paths.
+  registerSecret(spec.githubToken);
+  registerSecret(spec.llmAuth.token);
+
+  // Clear all credential env vars then set exactly one set based on provider.
+  // Setting multiple credential env vars causes the SDK to reject the request.
+  delete process.env.ANTHROPIC_API_KEY;
+  delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
+  delete process.env.ANTHROPIC_AUTH_TOKEN;
+  delete process.env.ANTHROPIC_BASE_URL;
+  delete process.env.ANTHROPIC_MODEL;
+
+  switch (spec.llmAuth.type) {
+    case "anthropic_api_key":
+      process.env.ANTHROPIC_API_KEY = spec.llmAuth.token;
+      break;
+    case "claude_oauth":
+      process.env.CLAUDE_CODE_OAUTH_TOKEN = spec.llmAuth.token;
+      break;
+    case "custom":
+      process.env.ANTHROPIC_BASE_URL = spec.llmAuth.baseUrl;
+      process.env.ANTHROPIC_AUTH_TOKEN = spec.llmAuth.token;
+      process.env.ANTHROPIC_MODEL = spec.llmAuth.model;
+      break;
+  }
 
   const workdir = path.join(WORK_ROOT, "repo");
   await mkdir(WORK_ROOT, { recursive: true });
-  const gitCtx = { workdir, repo: spec.repo, token };
+  const gitCtx = { workdir, repo: spec.repo, token: spec.githubToken };
 
   await cloneRepo(gitCtx, spec.baseBranch, WORK_ROOT);
   if (spec.mode === "code") {
@@ -58,7 +78,8 @@ async function main(): Promise<void> {
   }
 
   if (spec.mode === "code") {
-    const commitMessage = spec.prompt.split("\n")[0]?.slice(0, 72) || spec.branch;
+    const commitMessage =
+      spec.prompt.split("\n")[0]?.slice(0, 72) || spec.branch;
     const pushed = await commitAndPush(gitCtx, spec.branch, commitMessage);
     if (pushed) emit({ type: "pushed", branch: spec.branch });
   }
@@ -68,8 +89,7 @@ async function main(): Promise<void> {
 main()
   .then(() => process.exit(0))
   .catch((err: unknown) => {
-    const message = err instanceof Error ? err.message : String(err);
-    // Installation tokens must never reach Discord via error text.
-    emit({ type: "error", message: message.replaceAll(/x-access-token:[^@]+@/g, "***@") });
+    const raw = err instanceof Error ? err.message : String(err);
+    emit({ type: "error", message: redactSecrets(raw) });
     process.exit(1);
   });

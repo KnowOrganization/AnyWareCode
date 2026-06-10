@@ -1,17 +1,4 @@
 services:
-  # Local dev database. In production the bot points DATABASE_URL at Supabase
-  # (DATABASE_SSL=true) and this service is unused.
-  postgres:
-    image: postgres:17
-    environment:
-      POSTGRES_USER: anywherecode
-      POSTGRES_PASSWORD: anywherecode
-      POSTGRES_DB: anywherecode
-    ports:
-      - "5432:5432"
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-
   # Only way out of the runner network. Runners get HTTPS_PROXY pointed here;
   # the filter file allowlists Anthropic + GitHub and nothing else.
   egress-proxy:
@@ -20,8 +7,31 @@ services:
       - default
       - runner-egress
 
-volumes:
-  pgdata:
+  # One-shot service: builds the runner image so `docker compose up -d --build`
+  # ships both bot and runner atomically from the same checkout.
+  runner-image:
+    build:
+      context: .
+      dockerfile: apps/runner/Dockerfile
+    image: anywherecode-runner
+    entrypoint: ["true"]
+
+  bot:
+    build:
+      context: .
+      dockerfile: apps/bot/Dockerfile
+    env_file: .env
+    environment:
+      RUNNER_NETWORK: anywherecode-egress
+      RUNNER_HTTPS_PROXY: http://egress-proxy:8888
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "3000:3000"
+    depends_on:
+      runner-image:
+        condition: service_completed_successfully
+    restart: unless-stopped
 
 networks:
   # Task containers join only this network (internal: no direct internet).

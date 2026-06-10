@@ -2,6 +2,20 @@ import { createInterface } from "node:readline";
 import type { Readable } from "node:stream";
 import { serializeEvent, type RunnerEvent } from "@anywherecode/shared";
 
+const secrets: string[] = [];
+
+export function registerSecret(v: string): void {
+  if (v) secrets.push(v);
+}
+
+export function redactSecrets(msg: string): string {
+  let out = msg.replaceAll(/x-access-token:[^@]+@/g, "***@");
+  for (const s of secrets) {
+    if (s) out = out.replaceAll(s, "***");
+  }
+  return out.replaceAll(/sk-ant-[A-Za-z0-9_-]{8,}/g, "sk-ant-***");
+}
+
 export function emit(event: RunnerEvent): void {
   process.stdout.write(serializeEvent(event));
 }

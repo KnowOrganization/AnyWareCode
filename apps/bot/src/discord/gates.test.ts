@@ -12,6 +12,11 @@ function guildRow(overrides: Partial<Guild> = {}): Guild {
     asksUsedThisMonth: 0,
     capResetAt: new Date("2099-01-01T00:00:00Z"),
     createdAt: new Date(),
+    llmProviderType: null,
+    llmCredentialEnc: null,
+    llmBaseUrl: null,
+    llmModel: null,
+    llmCredentialSetAt: null,
     ...overrides,
   };
 }

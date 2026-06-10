@@ -15,8 +15,10 @@ import {
 import type { Config } from "../config.js";
 import { schema, type Db } from "../db/index.js";
 import type { GitHubService } from "../github/app.js";
+import { isAuthError, resolveLlmAuth } from "../llm/credentials.js";
 import { GuildTaskLimiter } from "./limiter.js";
 import { ProgressRenderer, ThrottledUpdater } from "./renderer.js";
+import { refundUsage } from "./usage.js";
 import type { Workspace, WorkspaceHandle } from "./workspace.js";
 
 export interface StartTaskParams {
@@ -46,6 +48,8 @@ interface ActiveTask {
   handle: WorkspaceHandle | null;
   /** Set when the task is being stopped, so the run loop reports it correctly. */
   terminalReason: TerminalReason | null;
+  /** "guild" if the LLM credential came from the guild row; "platform" if from config. */
+  llmSource: "guild" | "platform" | null;
 }
 
 export class TaskOrchestrator {
@@ -78,8 +82,6 @@ export class TaskOrchestrator {
     const task = this.active.get(threadId);
     if (!task || task.terminalReason) return false;
     task.terminalReason = "cancel";
-    // Works whether the task is running (kill the container) or still queued
-    // (handle is null; the run loop bails out before starting one).
     task.handle?.send({ type: "cancel" });
     await task.handle?.kill();
     return true;
@@ -114,6 +116,7 @@ export class TaskOrchestrator {
       mode: params.mode,
       handle: null,
       terminalReason: null,
+      llmSource: null,
     };
     this.active.set(params.thread.id, task);
 
@@ -124,7 +127,6 @@ export class TaskOrchestrator {
 
     try {
       if (task.terminalReason === "cancel") {
-        // Cancelled before it ever ran.
         await this.settle(task, "cancelled");
         await params.thread.send("🛑 Task cancelled before it started.");
         return;
@@ -144,6 +146,16 @@ export class TaskOrchestrator {
   ): Promise<void> {
     const { thread } = params;
     const { taskId } = task;
+
+    // Resolve LLM auth before spending GitHub token quota.
+    const resolved = await resolveLlmAuth(this.db, this.config, params.guildId);
+    if (!resolved.auth) {
+      await this.settle(task, "failed");
+      await thread.send(`⚠️ ${resolved.reason}`);
+      return;
+    }
+    task.llmSource = resolved.source;
+
     const token = await this.github.mintRepoToken(
       params.installationId,
       params.repoFullName,
@@ -157,13 +169,14 @@ export class TaskOrchestrator {
       mode: params.mode,
       transcript: params.iterate?.transcript ?? [],
       resumeBranch: Boolean(params.iterate),
-      // Secrets ride the (stdin) spec, never container env vars.
       githubToken: token,
-      anthropicApiKey: this.config.ANTHROPIC_API_KEY,
+      llmAuth: resolved.auth,
     };
 
     // Only non-secret config goes in the container environment.
-    const env: Record<string, string> = {};
+    const env: Record<string, string> = {
+      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
+    };
     if (this.config.RUNNER_HTTPS_PROXY) {
       env.HTTPS_PROXY = this.config.RUNNER_HTTPS_PROXY;
       env.HTTP_PROXY = this.config.RUNNER_HTTPS_PROXY;
@@ -221,8 +234,6 @@ export class TaskOrchestrator {
       await updater.flush();
     }
 
-    // A stop (cancel/timeout) takes precedence over whatever the truncated
-    // event stream looked like — otherwise a killed task reads as "done".
     const stopped = this.reasonOf(task);
     if (stopped === "cancel") {
       await this.settle(task, "cancelled");
@@ -239,7 +250,20 @@ export class TaskOrchestrator {
 
     if (errorMessage) {
       await this.settle(task, "failed");
-      await thread.send(`⚠️ Task failed: ${truncateForDiscord(errorMessage)}`);
+      if (isAuthError(errorMessage) && task.llmSource === "guild") {
+        await thread.send(
+          "⚠️ LLM credential looks invalid or revoked. Admin: run `/connect llm` to reconnect.",
+        );
+      } else if (isAuthError(errorMessage) && task.llmSource === "platform") {
+        console.error(`[operator] LLM auth error on platform key: ${errorMessage}`);
+        await thread.send(
+          "⚠️ LLM authentication failed. Contact the bot operator.",
+        );
+      } else {
+        await thread.send(
+          `⚠️ Task failed: ${truncateForDiscord(errorMessage)}`,
+        );
+      }
       return;
     }
 
@@ -308,11 +332,6 @@ export class TaskOrchestrator {
     });
   }
 
-  /**
-   * Reads the stop reason through a call so TypeScript doesn't narrow it away:
-   * the field is mutated asynchronously (by /cancel and the timeout timer),
-   * which control-flow analysis can't see.
-   */
   private reasonOf(task: ActiveTask): TerminalReason | null {
     return task.terminalReason;
   }
@@ -325,27 +344,7 @@ export class TaskOrchestrator {
       .update(schema.tasks)
       .set({ status, finishedAt: new Date() })
       .where(eq(schema.tasks.id, task.taskId));
-    // A task that didn't actually do useful work shouldn't burn the monthly
-    // quota that was reserved when it was launched.
-    if (status !== "done") await this.refundUsage(task.guildId, task.mode);
-  }
-
-  private async refundUsage(
-    guildId: string,
-    mode: "code" | "ask",
-  ): Promise<void> {
-    const guild = await this.db.query.guilds.findFirst({
-      where: eq(schema.guilds.id, guildId),
-    });
-    if (!guild) return;
-    await this.db
-      .update(schema.guilds)
-      .set(
-        mode === "code"
-          ? { tasksUsedThisMonth: Math.max(0, guild.tasksUsedThisMonth - 1) }
-          : { asksUsedThisMonth: Math.max(0, guild.asksUsedThisMonth - 1) },
-      )
-      .where(eq(schema.guilds.id, guildId));
+    if (status !== "done") await refundUsage(this.db, task.guildId, task.mode);
   }
 }
 

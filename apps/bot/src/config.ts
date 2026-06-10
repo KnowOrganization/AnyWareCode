@@ -11,7 +11,12 @@ const configSchema = z.object({
     .transform((key) => key.replaceAll("\\n", "\n")),
   /** Slug from app registration; used to build the install URL. */
   GITHUB_APP_SLUG: z.string().min(1).default("anywherecode"),
-  ANTHROPIC_API_KEY: z.string().min(1),
+  /** Platform fallback key; optional when guilds supply their own via /connect llm. */
+  ANTHROPIC_API_KEY: z.string().min(1).optional(),
+  /** AES-256-GCM encryption key for stored guild credentials. Min 32 chars. */
+  CREDENTIAL_SECRET: z.string().min(32),
+  /** Comma-separated hostnames permitted for custom LLM base URLs; empty = allow all (dev). */
+  CUSTOM_PROVIDER_ALLOWLIST: z.string().default(""),
   DATABASE_URL: z.string().min(1),
   /**
    * TLS to Postgres. Required for Supabase (and any managed PG); leave false

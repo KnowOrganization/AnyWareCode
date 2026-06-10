@@ -1,7 +1,4 @@
 import { defineConfig } from "drizzle-kit";
-import dotenv from "dotenv";
-
-dotenv.config();
 
 const useSsl =
   process.env.DATABASE_SSL === "true" || process.env.DATABASE_SSL === "1";

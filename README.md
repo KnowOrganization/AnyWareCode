@@ -6,128 +6,222 @@ streaming progress, taking mid-task instructions from anyone in the thread —
 then opens a pull request.
 
 ```
-/code <task>     spawns a thread, agent works, streams progress, opens a PR
-/ask <question>  repo-aware Q&A, read-only
-/repo set        pick the active repo for a channel
-/status          running and queued tasks
-/cancel          stop the task in this thread
-/config role     choose who may invoke the agent (default: admins)
+/code <task>       spawns a thread, agent works, streams progress, opens a PR
+/ask <question>    repo-aware Q&A, read-only
+/connect llm       connect your LLM (Anthropic key, Claude subscription, or compatible provider)
+/connect github    connect GitHub repos
+/setup             show connection status and usage
+/repo set          pick the active repo for a channel
+/status            running and queued tasks
+/cancel            stop the task in this thread
+/config role       choose who may invoke the agent (default: admins)
 ```
 
 ## How it works
 
 ```
 Discord ⇄ apps/bot (discord.js + fastify + orchestrator)
-              │ Drizzle → Postgres
+              │ Drizzle → Supabase (Postgres)
               │ dockerode → ephemeral container per task (apps/runner)
               │                 │ Claude Agent SDK, git clone/push
               │                 └ egress only via allowlist proxy
               └ octokit → GitHub App (installation tokens, PRs, merges)
 ```
 
-- **GitHub App, not PATs**: users grant per-repo access in GitHub's own UI;
-  tokens are short-lived installation tokens scoped to one repo per task;
-  PRs show up as `AnywhereCode[bot]`; revoking = uninstalling the app.
-- **Container per task**: the repo is cloned into an ephemeral Docker
-  container (`apps/runner`), worked on, pushed, destroyed. Repo code never
-  enters the bot process. Containers run with dropped capabilities, resource
-  limits, and (in production) a network whose only exit is an allowlist proxy
-  (`infra/egress-proxy`) permitting Anthropic + GitHub only.
-- **Branch + PR only**: the runner pushes to `anywherecode/<task-id>`; the
-  bot opens the PR. Nothing ever pushes to your default branch.
-- **Secret handling**: tokens reach the container over stdin, never as env
-  vars (which `docker inspect` exposes). The GitHub token is scoped to one repo
-  and fed to git via `GIT_ASKPASS`, so it never lands in the remote URL,
-  `.git/config`, or process args, and is never put on the runner's environment
-  where the agent's tools would inherit it. *Caveat:* the Anthropic key must be
-  in the SDK subprocess's environment, so a prompt-injected agent could read it
-  — the egress allowlist limits exfiltration, and per-task scoped keys are the
-  planned hardening.
-- **Unforgeable, single-use install links**: the GitHub-App `state` is HMAC
-  signed and backed by a short-lived, one-time DB nonce, and the returned
-  `installation_id` is verified against the App — a captured link can't be
-  replayed or paired with someone else's installation.
-- **Threads are shared sessions**: anyone replying in the task thread is
-  heard by the agent mid-task, with their username attached.
+Each Discord server connects its **own LLM credential** (bring your own key).
+Supported: Anthropic API key, Claude Pro/Max subscription token (`claude setup-token`),
+or any Anthropic-compatible endpoint (DeepSeek, LiteLLM proxy, etc.).
 
-## Setup
+---
 
-### 1. Discord application
+## Local dev setup (step by step)
 
-Create an app at <https://discord.com/developers/applications>, add a bot,
-enable the **Message Content** intent, and grab the bot token + client id.
-Invite URL scopes: `bot applications.commands`; permissions: Send Messages,
-Create Public Threads, Send Messages in Threads, Embed Links, Read Message
-History.
+### Prerequisites
 
-### 2. GitHub App
+- Node.js >= 22 — `node --version`
+- Docker Desktop running
+- `corepack enable` (provides pnpm)
 
-Register at <https://github.com/settings/apps/new>:
+---
 
-- **Name**: AnywhereCode (the slug goes in `GITHUB_APP_SLUG`)
-- **Permissions**: Contents *Read & write*, Pull requests *Read & write*,
-  Metadata *Read-only*
-- **Setup URL**: `${PUBLIC_URL}/github/setup` and check
-  *Redirect on update*
-- Generate a private key; webhooks can stay disabled for v1.
+### Step 1 — Create a Discord application
 
-### 3. Database (Supabase)
+1. Go to <https://discord.com/developers/applications> → **New Application**.
+2. Name it (e.g. "AnywhereCode Dev").
+3. **Bot** tab → **Add Bot** → copy the **Token** → this is `DISCORD_TOKEN`.
+4. Same page → enable **Message Content Intent** under Privileged Gateway Intents.
+5. **OAuth2 → General** → copy **Client ID** → this is `DISCORD_CLIENT_ID`.
+6. **OAuth2 → URL Generator**: scopes = `bot` + `applications.commands`;
+   permissions = Send Messages, Create Public Threads, Send Messages in Threads,
+   Embed Links, Read Message History.
+7. Copy the generated URL → open it → add the bot to your test server.
 
-Create a project at <https://supabase.com>. From **Project Settings → Database
-→ Connection string**, copy the **Session pooler** (or Direct) URI into
-`DATABASE_URL` and set `DATABASE_SSL=true`. Migrations run against the same URL.
+---
 
-For purely local dev you can instead use the bundled Postgres
-(`docker compose up -d postgres`) with `DATABASE_SSL=false`.
+### Step 2 — Get a public URL
 
-### 4. Run it
+GitHub needs to redirect back to the bot after app installation.
+For local dev, use a free Cloudflare Tunnel:
 
 ```sh
-cp .env.example .env        # fill it in (DATABASE_URL, DATABASE_SSL, tokens…)
-corepack enable             # provides pnpm
+# Install once
+brew install cloudflared
+
+# Run before starting the bot (leave this terminal open)
+cloudflared tunnel --url http://localhost:3000
+```
+
+Copy the `https://something.trycloudflare.com` URL — this is your `PUBLIC_URL`.
+
+> The tunnel URL changes each run. Update `PUBLIC_URL` in `.env` and the GitHub App's Setup URL if it changes.
+
+---
+
+### Step 3 — Create a GitHub App
+
+1. Go to <https://github.com/settings/apps/new>.
+2. Fill in:
+   - **GitHub App name**: `AnywhereCode` (or any name; the slug in the URL = `GITHUB_APP_SLUG`)
+   - **Homepage URL**: your `PUBLIC_URL` from Step 2
+   - **Callback URL**: leave blank
+   - **Setup URL**: `{PUBLIC_URL}/github/setup` — check **Redirect on update**
+   - **Webhook → Active**: **uncheck** (no webhooks needed)
+3. **Repository permissions**:
+   - Contents: **Read & write**
+   - Pull requests: **Read & write**
+   - Metadata: **Read-only** (required automatically)
+4. **Where can this GitHub App be installed?**: Any account
+5. Click **Create GitHub App**.
+6. On the app page:
+   - Copy **App ID** → `GITHUB_APP_ID`
+   - Copy the slug from the URL (`/apps/your-slug`) → `GITHUB_APP_SLUG`
+   - Scroll down → **Generate a private key** → download `.pem` file
+   - Open the `.pem`, copy contents → `GITHUB_APP_PRIVATE_KEY`
+     (replace literal newlines with `\n` for the env file)
+
+---
+
+### Step 4 — Create a Supabase project
+
+1. Go to <https://supabase.com> → **New project**.
+2. Once created: **Project Settings → Database → Connection string**.
+3. Copy the **Session pooler** URI → this is `DATABASE_URL`.
+4. Set `DATABASE_SSL=true`.
+
+---
+
+### Step 5 — Set up the environment
+
+```sh
+cp .env.example .env
+```
+
+Open `.env` and fill in:
+
+```env
+DISCORD_TOKEN=           # from Step 1
+DISCORD_CLIENT_ID=       # from Step 1
+
+GITHUB_APP_ID=           # from Step 3
+GITHUB_APP_SLUG=         # from Step 3 (e.g. anywherecode)
+GITHUB_APP_PRIVATE_KEY=  # contents of the .pem, with \n for newlines
+
+PUBLIC_URL=              # https://something.trycloudflare.com from Step 2
+
+STATE_SECRET=            # openssl rand -base64 24
+CREDENTIAL_SECRET=       # openssl rand -base64 48
+
+DATABASE_URL=            # Supabase Session pooler URI from Step 4
+DATABASE_SSL=true
+
+# Leave these for dev:
+RUNNER_NETWORK=
+RUNNER_HTTPS_PROXY=
+```
+
+Generate the secrets:
+```sh
+openssl rand -base64 24   # paste as STATE_SECRET
+openssl rand -base64 48   # paste as CREDENTIAL_SECRET
+```
+
+---
+
+### Step 6 — Build the runner and start the bot
+
+```sh
+corepack enable
 pnpm install
 
-# Local DB only (skip if using Supabase): docker compose up -d postgres
-docker compose up -d egress-proxy        # prod egress allowlist (optional in dev)
-
-pnpm --filter @anywherecode/bot db:migrate
-pnpm --filter @anywherecode/bot register-commands
+# Build the runner Docker image (from repo root)
 docker build -f apps/runner/Dockerfile -t anywherecode-runner .
-pnpm --filter @anywherecode/bot start
+
+# Start the bot (tsx watch — auto-reloads on file changes)
+pnpm dev
 ```
 
-`PUBLIC_URL` must be reachable by GitHub for the install redirect (for local
-development use cloudflared or ngrok).
+The bot will:
+- Run DB migrations against Supabase automatically
+- Register slash commands with Discord
+- Log `Logged in as AnywhereCode#xxxx` when ready
 
-### 5. Invite the bot
+> **Runner changes**: `pnpm dev` only reloads the bot. After editing anything in
+> `apps/runner/` or `packages/shared/`, rebuild the runner image:
+> `docker build -f apps/runner/Dockerfile -t anywherecode-runner .`
 
-Open the OAuth2 invite URL (scopes `bot applications.commands`) from the Discord
-developer portal and add it to your server. It posts a welcome message with a
-**Connect GitHub** button.
+---
 
-### 6. Onboarding (what your users see)
+### Step 7 — Connect GitHub and LLM in your server
 
-1. Bot joins → posts a welcome message with a **Connect GitHub** button.
-2. Button → GitHub App install page → user picks repos.
-3. GitHub redirects back, the guild is linked, bot posts "Ready".
-4. `/repo set`, then `/code` away.
+With the bot running in your test server:
 
-## Development
+1. The bot posts a welcome message with **Connect GitHub** and **Connect LLM** buttons.
+2. Click **Connect GitHub** → install the GitHub App on a repo.
+3. Click **Connect LLM** → pick a provider:
+   - **Claude subscription**: run `claude setup-token` locally, paste the token
+   - **Anthropic API key**: paste your `sk-ant-api-...` key
+   - **Other provider**: paste base URL + key + model name
+4. Run `/repo set` in a channel → pick a repo.
+5. Type `/code fix the typo in README` — done.
+
+---
+
+### Useful commands during dev
 
 ```sh
-pnpm -r typecheck   # strict TS across the workspace
-pnpm -r test        # vitest: protocol, signing, renderer, gates
-pnpm dev            # bot with tsx watch
+pnpm -r typecheck                            # TypeScript check across all packages
+pnpm -r test                                 # run all tests (vitest)
+pnpm dev                                     # bot with hot reload
+pnpm --filter @anywherecode/bot test gates   # single test file
+pnpm --filter @anywherecode/bot db:generate  # after editing db/schema.ts
 ```
 
-Layout: `packages/shared` defines the NDJSON protocol between bot and runner
-(`TaskSpec` in, `RunnerEvent` out). `apps/bot` owns Discord, Postgres, GitHub,
-and container lifecycles behind a `Workspace` interface (swap `DockerWorkspace`
-for Fly Machines/Firecracker later). `apps/runner` wraps the Claude Agent SDK
-behind an `Agent` interface (other engines later).
+---
 
-## v1 limits (by design)
+## Production (one command)
 
-One running task per server; monthly task caps (`/code` and a looser one for
-`/ask`); platform API key only (no BYO keys yet); no dashboard or billing;
-GitHub-hosted repos only.
+```sh
+cp .env.example .env   # fill in all values
+docker compose up -d --build
+```
+
+Builds and starts: bot, runner image, egress proxy. DB is Supabase — no local Postgres.
+Bot runs migrations and registers commands automatically on boot.
+
+---
+
+## Architecture
+
+| Package | Role |
+|---|---|
+| `packages/shared` | NDJSON protocol between bot and runner (`TaskSpec` in, `RunnerEvent` out) |
+| `apps/bot` | Discord, Supabase, GitHub App, container orchestration, HTTP server |
+| `apps/runner` | Baked Docker image; clones repo, runs Claude Agent SDK, pushes branch |
+| `infra/egress-proxy` | tinyproxy allowlist — Anthropic + GitHub only (production) |
+
+**Security notes:**
+- Tokens travel via container stdin, never env vars (`docker inspect` exposes env).
+- Runner has dropped capabilities, memory/CPU/PID limits, AutoRemove.
+- In production, runner containers can only reach `api.anthropic.com` + GitHub (egress proxy).
+- Each guild's LLM credential is encrypted at rest (AES-256-GCM, per-guild key).
+- GitHub install links are HMAC-signed + single-use DB nonces (unforgeable, unreplayable).

@@ -19,6 +19,17 @@ export const guilds = pgTable("guilds", {
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
+  /** BYO-LLM: guild-scoped credential. All nullable; absent = fall back to platform key. */
+  llmProviderType: text("llm_provider_type", {
+    enum: ["claude_oauth", "anthropic_api_key", "custom"],
+  }),
+  /** AES-256-GCM encrypted token blob (v1.<iv>.<ct>.<tag> base64url). */
+  llmCredentialEnc: text("llm_credential_enc"),
+  /** Custom provider only: Anthropic-compatible base URL. */
+  llmBaseUrl: text("llm_base_url"),
+  /** Custom provider only: model name passed as ANTHROPIC_MODEL. */
+  llmModel: text("llm_model"),
+  llmCredentialSetAt: timestamp("llm_credential_set_at", { withTimezone: true }),
 });
 
 export const channelRepos = pgTable("channel_repos", {
