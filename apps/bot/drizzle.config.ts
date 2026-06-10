@@ -1,10 +1,19 @@
 import { defineConfig } from "drizzle-kit";
+import dotenv from "dotenv";
+
+dotenv.config();
+
+const useSsl =
+  process.env.DATABASE_SSL === "true" || process.env.DATABASE_SSL === "1";
 
 export default defineConfig({
   schema: "./src/db/schema.ts",
   out: "./drizzle",
   dialect: "postgresql",
   dbCredentials: {
-    url: process.env.DATABASE_URL ?? "postgres://anywherecode:anywherecode@localhost:5432/anywherecode",
+    url:
+      process.env.DATABASE_URL ??
+      "postgres://anywherecode:anywherecode@localhost:5432/anywherecode",
+    ssl: useSsl ? { rejectUnauthorized: false } : undefined,
   },
 });

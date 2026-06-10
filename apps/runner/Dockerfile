@@ -15,6 +15,10 @@ RUN pnpm --filter @anywherecode/runner --prod deploy /out
 FROM node:22-slim
 RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates \
     && rm -rf /var/lib/apt/lists/*
+# Git credential helper: feeds the installation token to git via GIT_PAT so it
+# never appears in the remote URL, .git/config, or process args.
+COPY apps/runner/git-askpass.sh /usr/local/bin/git-askpass.sh
+RUN chmod 0555 /usr/local/bin/git-askpass.sh
 # Non-root user; /work holds the ephemeral clone.
 RUN useradd -m runner && mkdir /work && chown runner /work
 COPY --from=build /out /runner

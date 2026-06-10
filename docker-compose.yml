@@ -1,4 +1,6 @@
 services:
+  # Local dev database. In production the bot points DATABASE_URL at Supabase
+  # (DATABASE_SSL=true) and this service is unused.
   postgres:
     image: postgres:17
     environment:

@@ -10,13 +10,13 @@ import { ensureGuild } from "./discord/gates.js";
 import { handleInteraction, type BotContext } from "./discord/interactions.js";
 import { findAnnounceChannel, welcomeMessage } from "./discord/welcome.js";
 import { GitHubService } from "./github/app.js";
-import { signState } from "./github/state.js";
+import { createInstallState } from "./github/install-state.js";
 import { buildServer } from "./http/server.js";
 import { TaskOrchestrator } from "./orchestrator/taskRunner.js";
 import { DockerWorkspace } from "./orchestrator/workspace.js";
 
 const config = loadConfig();
-const db = createDb(config.DATABASE_URL);
+const db = createDb(config.DATABASE_URL, config.DATABASE_SSL);
 const github = new GitHubService(config);
 const orchestrator = new TaskOrchestrator(
   db,
@@ -44,7 +44,12 @@ client.on(Events.GuildCreate, async (guild) => {
   await ensureGuild(db, guild.id, config.DEFAULT_TASK_CAP);
   const channel = findAnnounceChannel(guild);
   if (!channel) return;
-  const state = signState(config.STATE_SECRET, guild.id);
+  const state = await createInstallState(
+    db,
+    config.STATE_SECRET,
+    guild.id,
+    config.INSTALL_STATE_TTL_MINUTES,
+  );
   await channel.send(welcomeMessage(github.installUrl(state)));
 });
 
@@ -66,6 +71,7 @@ client.on(Events.MessageCreate, (message) => {
 const server = buildServer({
   db,
   config,
+  github,
   onInstallationLinked: async (guildId) => {
     const guild = await client.guilds.fetch(guildId);
     const channel = findAnnounceChannel(guild);

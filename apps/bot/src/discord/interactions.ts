@@ -13,7 +13,7 @@ import type { Config } from "../config.js";
 import { schema, type Db } from "../db/index.js";
 import type { Guild } from "../db/schema.js";
 import type { GitHubService } from "../github/app.js";
-import { signState } from "../github/state.js";
+import { createInstallState } from "../github/install-state.js";
 import type { TaskOrchestrator } from "../orchestrator/taskRunner.js";
 import { canInvoke, capState, ensureGuild } from "./gates.js";
 import { welcomeMessage } from "./welcome.js";
@@ -162,7 +162,12 @@ async function checkPreconditions(
     return "You don't have permission to run agent tasks here. Ask an admin to grant your role with `/config role`.";
   }
   if (!guild.githubInstallationId) {
-    const state = signState(ctx.config.STATE_SECRET, guild.id);
+    const state = await createInstallState(
+      ctx.db,
+      ctx.config.STATE_SECRET,
+      guild.id,
+      ctx.config.INSTALL_STATE_TTL_MINUTES,
+    );
     return `GitHub isn't connected yet. An admin needs to [install the GitHub App](${ctx.github.installUrl(state)}).`;
   }
   const cap = capState(guild, mode);
@@ -254,7 +259,12 @@ async function handleRepo(
     return;
   }
   if (!guild.githubInstallationId) {
-    const state = signState(ctx.config.STATE_SECRET, guildId);
+    const state = await createInstallState(
+      ctx.db,
+      ctx.config.STATE_SECRET,
+      guildId,
+      ctx.config.INSTALL_STATE_TTL_MINUTES,
+    );
     await interaction.reply({
       content: `Connect GitHub first: [install the app](${ctx.github.installUrl(state)})`,
       flags: MessageFlags.Ephemeral,
@@ -319,9 +329,12 @@ async function handleCancel(
     return;
   }
   const cancelled = await ctx.orchestrator.cancel(interaction.channel.id);
-  await interaction.reply(
-    cancelled ? "🛑 Task cancelled." : "No running task in this thread.",
-  );
+  await interaction.reply({
+    content: cancelled
+      ? "🛑 Cancelling…"
+      : "No running task in this thread.",
+    flags: cancelled ? undefined : MessageFlags.Ephemeral,
+  });
 }
 
 async function handleConfig(

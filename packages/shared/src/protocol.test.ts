@@ -33,20 +33,31 @@ describe("runner event protocol", () => {
 });
 
 describe("task spec", () => {
+  const base = {
+    taskId: "abc",
+    repo: "owner/repo",
+    branch: "anywherecode/abc",
+    baseBranch: "main",
+    prompt: "do things",
+    mode: "code" as const,
+    githubToken: "ghs_token",
+    anthropicApiKey: "sk-ant-key",
+  };
+
   it("applies defaults and validates repo shape", () => {
-    const spec = taskSpecSchema.parse({
-      taskId: "abc",
-      repo: "owner/repo",
-      branch: "anywherecode/abc",
-      baseBranch: "main",
-      prompt: "do things",
-      mode: "code",
-    });
+    const spec = taskSpecSchema.parse(base);
     expect(spec.transcript).toEqual([]);
     expect(spec.resumeBranch).toBe(false);
     expect(() =>
       taskSpecSchema.parse({ ...spec, repo: "not-a-repo" }),
     ).toThrow();
+  });
+
+  it("requires credentials (they ride the spec, not env)", () => {
+    const { githubToken, anthropicApiKey, ...withoutCreds } = base;
+    void githubToken;
+    void anthropicApiKey;
+    expect(() => taskSpecSchema.parse(withoutCreds)).toThrow();
   });
 
   it("namespaces task branches", () => {

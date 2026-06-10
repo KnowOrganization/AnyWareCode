@@ -32,6 +32,14 @@ export const taskSpecSchema = z.object({
   transcript: z.array(transcriptEntrySchema).default([]),
   /** True when `branch` already exists on the remote (Iterate flow). */
   resumeBranch: z.boolean().default(false),
+  /**
+   * Secrets travel here (stdin), never as container env vars: env is visible in
+   * `docker inspect` and is inherited by every child the agent spawns. The
+   * runner reads these, uses the GitHub token only for its own git calls, and
+   * sets ANTHROPIC_API_KEY just before invoking the SDK.
+   */
+  githubToken: z.string().min(1),
+  anthropicApiKey: z.string().min(1),
 });
 export type TaskSpec = z.infer<typeof taskSpecSchema>;
 

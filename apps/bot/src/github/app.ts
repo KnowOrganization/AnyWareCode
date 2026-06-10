@@ -19,6 +19,23 @@ export class GitHubService {
     return this.app.getInstallationOctokit(installationId);
   }
 
+  /**
+   * Confirms this App actually owns `installationId` by reading it with the
+   * App JWT. The install callback gets `installation_id` straight from the
+   * query string, so without this check a valid state could be paired with an
+   * attacker-chosen installation. Returns false on any lookup failure.
+   */
+  async validateInstallation(installationId: number): Promise<boolean> {
+    try {
+      await this.app.octokit.rest.apps.getInstallation({
+        installation_id: installationId,
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   /** Short-lived token scoped to a single repo, for the runner's git ops. */
   async mintRepoToken(
     installationId: number,
