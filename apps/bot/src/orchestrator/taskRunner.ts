@@ -36,10 +36,16 @@ export interface StartTaskParams {
   };
 }
 
+type TerminalReason = "cancel" | "timeout";
+
 interface ActiveTask {
   taskId: string;
   guildId: string;
-  handle: WorkspaceHandle;
+  mode: "code" | "ask";
+  /** Null until the container starts (e.g. while queued behind another task). */
+  handle: WorkspaceHandle | null;
+  /** Set when the task is being stopped, so the run loop reports it correctly. */
+  terminalReason: TerminalReason | null;
 }
 
 export class TaskOrchestrator {
@@ -65,18 +71,17 @@ export class TaskOrchestrator {
   forwardThreadMessage(threadId: string, author: string, text: string): void {
     this.active
       .get(threadId)
-      ?.handle.send({ type: "user_message", author, text });
+      ?.handle?.send({ type: "user_message", author, text });
   }
 
   async cancel(threadId: string): Promise<boolean> {
     const task = this.active.get(threadId);
-    if (!task) return false;
-    task.handle.send({ type: "cancel" });
-    await task.handle.kill();
-    await this.db
-      .update(schema.tasks)
-      .set({ status: "cancelled", finishedAt: new Date() })
-      .where(eq(schema.tasks.id, task.taskId));
+    if (!task || task.terminalReason) return false;
+    task.terminalReason = "cancel";
+    // Works whether the task is running (kill the container) or still queued
+    // (handle is null; the run loop bails out before starting one).
+    task.handle?.send({ type: "cancel" });
+    await task.handle?.kill();
     return true;
   }
 
@@ -102,13 +107,29 @@ export class TaskOrchestrator {
       requestedBy: params.requestedBy,
     });
 
+    // Registered before acquiring a slot so /cancel works even while queued.
+    const task: ActiveTask = {
+      taskId,
+      guildId: params.guildId,
+      mode: params.mode,
+      handle: null,
+      terminalReason: null,
+    };
+    this.active.set(params.thread.id, task);
+
     const slot = await this.limiter.acquire(params.guildId);
     if (slot.queued) {
       await params.thread.send("⏳ Queued behind another task in this server…");
     }
 
     try {
-      await this.execute(taskId, branch, baseBranch, params);
+      if (task.terminalReason === "cancel") {
+        // Cancelled before it ever ran.
+        await this.settle(task, "cancelled");
+        await params.thread.send("🛑 Task cancelled before it started.");
+        return;
+      }
+      await this.execute(task, branch, baseBranch, params);
     } finally {
       this.limiter.release(params.guildId);
       this.active.delete(params.thread.id);
@@ -116,12 +137,17 @@ export class TaskOrchestrator {
   }
 
   private async execute(
-    taskId: string,
+    task: ActiveTask,
     branch: string,
     baseBranch: string,
     params: StartTaskParams,
   ): Promise<void> {
     const { thread } = params;
+    const { taskId } = task;
+    const token = await this.github.mintRepoToken(
+      params.installationId,
+      params.repoFullName,
+    );
     const spec: TaskSpec = {
       taskId,
       repo: params.repoFullName,
@@ -131,23 +157,27 @@ export class TaskOrchestrator {
       mode: params.mode,
       transcript: params.iterate?.transcript ?? [],
       resumeBranch: Boolean(params.iterate),
+      // Secrets ride the (stdin) spec, never container env vars.
+      githubToken: token,
+      anthropicApiKey: this.config.ANTHROPIC_API_KEY,
     };
 
-    const token = await this.github.mintRepoToken(
-      params.installationId,
-      params.repoFullName,
-    );
-    const env: Record<string, string> = {
-      GITHUB_TOKEN: token,
-      ANTHROPIC_API_KEY: this.config.ANTHROPIC_API_KEY,
-    };
+    // Only non-secret config goes in the container environment.
+    const env: Record<string, string> = {};
     if (this.config.RUNNER_HTTPS_PROXY) {
       env.HTTPS_PROXY = this.config.RUNNER_HTTPS_PROXY;
       env.HTTP_PROXY = this.config.RUNNER_HTTPS_PROXY;
     }
 
     const handle = await this.workspace.start(spec, env);
-    this.active.set(thread.id, { taskId, guildId: params.guildId, handle });
+    task.handle = handle;
+    // A /cancel that landed between slot acquisition and here.
+    if (this.reasonOf(task) === "cancel") {
+      await handle.kill();
+      await this.settle(task, "cancelled");
+      await thread.send("🛑 Task cancelled.");
+      return;
+    }
     await this.db
       .update(schema.tasks)
       .set({ status: "running", containerId: handle.id })
@@ -155,7 +185,7 @@ export class TaskOrchestrator {
 
     const timeout = setTimeout(
       () => {
-        void thread.send("⏱️ Task hit the time limit and was stopped.");
+        task.terminalReason = "timeout";
         void handle.kill();
       },
       this.config.TASK_TIMEOUT_MINUTES * 60 * 1000,
@@ -191,19 +221,35 @@ export class TaskOrchestrator {
       await updater.flush();
     }
 
+    // A stop (cancel/timeout) takes precedence over whatever the truncated
+    // event stream looked like — otherwise a killed task reads as "done".
+    const stopped = this.reasonOf(task);
+    if (stopped === "cancel") {
+      await this.settle(task, "cancelled");
+      await thread.send("🛑 Task cancelled.");
+      return;
+    }
+    if (stopped === "timeout") {
+      await this.settle(task, "failed");
+      await thread.send(
+        "⏱️ Task hit the time limit and was stopped. Nothing was pushed.",
+      );
+      return;
+    }
+
     if (errorMessage) {
-      await this.finish(taskId, "failed");
+      await this.settle(task, "failed");
       await thread.send(`⚠️ Task failed: ${truncateForDiscord(errorMessage)}`);
       return;
     }
 
     if (params.mode === "ask") {
-      await this.finish(taskId, "done");
+      await this.settle(task, "done");
       return;
     }
 
     if (!pushed) {
-      await this.finish(taskId, "done");
+      await this.settle(task, "done");
       await thread.send(
         summary
           ? `ℹ️ No changes were pushed. ${truncateForDiscord(summary)}`
@@ -262,14 +308,44 @@ export class TaskOrchestrator {
     });
   }
 
-  private async finish(
-    taskId: string,
-    status: "done" | "failed",
+  /**
+   * Reads the stop reason through a call so TypeScript doesn't narrow it away:
+   * the field is mutated asynchronously (by /cancel and the timeout timer),
+   * which control-flow analysis can't see.
+   */
+  private reasonOf(task: ActiveTask): TerminalReason | null {
+    return task.terminalReason;
+  }
+
+  private async settle(
+    task: ActiveTask,
+    status: "done" | "failed" | "cancelled",
   ): Promise<void> {
     await this.db
       .update(schema.tasks)
       .set({ status, finishedAt: new Date() })
-      .where(eq(schema.tasks.id, taskId));
+      .where(eq(schema.tasks.id, task.taskId));
+    // A task that didn't actually do useful work shouldn't burn the monthly
+    // quota that was reserved when it was launched.
+    if (status !== "done") await this.refundUsage(task.guildId, task.mode);
+  }
+
+  private async refundUsage(
+    guildId: string,
+    mode: "code" | "ask",
+  ): Promise<void> {
+    const guild = await this.db.query.guilds.findFirst({
+      where: eq(schema.guilds.id, guildId),
+    });
+    if (!guild) return;
+    await this.db
+      .update(schema.guilds)
+      .set(
+        mode === "code"
+          ? { tasksUsedThisMonth: Math.max(0, guild.tasksUsedThisMonth - 1) }
+          : { asksUsedThisMonth: Math.max(0, guild.asksUsedThisMonth - 1) },
+      )
+      .where(eq(schema.guilds.id, guildId));
   }
 }
 

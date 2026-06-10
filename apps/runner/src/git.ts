@@ -5,6 +5,7 @@ const execFileAsync = promisify(execFile);
 
 const BOT_NAME = "AnywhereCode[bot]";
 const BOT_EMAIL = "anywherecode[bot]@users.noreply.github.com";
+const ASKPASS_PATH = "/usr/local/bin/git-askpass.sh";
 
 export interface GitContext {
   workdir: string;
@@ -12,8 +13,14 @@ export interface GitContext {
   token: string;
 }
 
+/**
+ * Remote URL carries only the username; the token is supplied per-command via
+ * GIT_ASKPASS. So the token never lands in the remote URL, in .git/config, or
+ * in `ps`/cmdline — and because GIT_PAT is set only on git's own env (not the
+ * runner's process.env), the agent's bash tool can't read it either.
+ */
 function remoteUrl(ctx: GitContext): string {
-  return `https://x-access-token:${ctx.token}@github.com/${ctx.repo}.git`;
+  return `https://x-access-token@github.com/${ctx.repo}.git`;
 }
 
 async function git(
@@ -26,7 +33,12 @@ async function git(
     ["-c", `user.name=${BOT_NAME}`, "-c", `user.email=${BOT_EMAIL}`, ...args],
     {
       cwd: opts.cwd ?? ctx.workdir,
-      env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+      env: {
+        ...process.env,
+        GIT_TERMINAL_PROMPT: "0",
+        GIT_ASKPASS: ASKPASS_PATH,
+        GIT_PAT: ctx.token,
+      },
       maxBuffer: 16 * 1024 * 1024,
     },
   );

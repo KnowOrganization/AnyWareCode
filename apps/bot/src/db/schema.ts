@@ -27,6 +27,20 @@ export const channelRepos = pgTable("channel_repos", {
   repoFullName: text("repo_full_name").notNull(),
 });
 
+/**
+ * Pending GitHub-App install links. A row is created when an admin starts the
+ * install flow and consumed (deleted) on the callback, so a captured install
+ * URL can't be replayed to relink a guild. Rows expire after a short window.
+ */
+export const setupStates = pgTable("setup_states", {
+  nonce: text("nonce").primaryKey(),
+  guildId: text("guild_id").notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
 export const taskStatus = pgEnum("task_status", [
   "queued",
   "running",
@@ -57,3 +71,4 @@ export const tasks = pgTable("tasks", {
 
 export type Guild = typeof guilds.$inferSelect;
 export type Task = typeof tasks.$inferSelect;
+export type SetupState = typeof setupStates.$inferSelect;

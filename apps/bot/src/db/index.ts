@@ -4,8 +4,13 @@ import * as schema from "./schema.js";
 
 export type Db = ReturnType<typeof createDb>;
 
-export function createDb(databaseUrl: string) {
-  const pool = new pg.Pool({ connectionString: databaseUrl });
+export function createDb(databaseUrl: string, ssl = false) {
+  const pool = new pg.Pool({
+    connectionString: databaseUrl,
+    // Supabase/managed PG terminate TLS with their own chain; we require
+    // encryption but don't pin a CA.
+    ssl: ssl ? { rejectUnauthorized: false } : undefined,
+  });
   return drizzle(pool, { schema });
 }
 

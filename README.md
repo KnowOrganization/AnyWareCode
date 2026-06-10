@@ -35,6 +35,18 @@ Discord ⇄ apps/bot (discord.js + fastify + orchestrator)
   (`infra/egress-proxy`) permitting Anthropic + GitHub only.
 - **Branch + PR only**: the runner pushes to `anywherecode/<task-id>`; the
   bot opens the PR. Nothing ever pushes to your default branch.
+- **Secret handling**: tokens reach the container over stdin, never as env
+  vars (which `docker inspect` exposes). The GitHub token is scoped to one repo
+  and fed to git via `GIT_ASKPASS`, so it never lands in the remote URL,
+  `.git/config`, or process args, and is never put on the runner's environment
+  where the agent's tools would inherit it. *Caveat:* the Anthropic key must be
+  in the SDK subprocess's environment, so a prompt-injected agent could read it
+  — the egress allowlist limits exfiltration, and per-task scoped keys are the
+  planned hardening.
+- **Unforgeable, single-use install links**: the GitHub-App `state` is HMAC
+  signed and backed by a short-lived, one-time DB nonce, and the returned
+  `installation_id` is verified against the App — a captured link can't be
+  replayed or paired with someone else's installation.
 - **Threads are shared sessions**: anyone replying in the task thread is
   heard by the agent mid-task, with their username attached.
 
@@ -59,12 +71,25 @@ Register at <https://github.com/settings/apps/new>:
   *Redirect on update*
 - Generate a private key; webhooks can stay disabled for v1.
 
-### 3. Run it
+### 3. Database (Supabase)
+
+Create a project at <https://supabase.com>. From **Project Settings → Database
+→ Connection string**, copy the **Session pooler** (or Direct) URI into
+`DATABASE_URL` and set `DATABASE_SSL=true`. Migrations run against the same URL.
+
+For purely local dev you can instead use the bundled Postgres
+(`docker compose up -d postgres`) with `DATABASE_SSL=false`.
+
+### 4. Run it
 
 ```sh
-cp .env.example .env       # fill it in
-docker compose up -d       # postgres + egress proxy
+cp .env.example .env        # fill it in (DATABASE_URL, DATABASE_SSL, tokens…)
+corepack enable             # provides pnpm
 pnpm install
+
+# Local DB only (skip if using Supabase): docker compose up -d postgres
+docker compose up -d egress-proxy        # prod egress allowlist (optional in dev)
+
 pnpm --filter @anywherecode/bot db:migrate
 pnpm --filter @anywherecode/bot register-commands
 docker build -f apps/runner/Dockerfile -t anywherecode-runner .
@@ -74,7 +99,13 @@ pnpm --filter @anywherecode/bot start
 `PUBLIC_URL` must be reachable by GitHub for the install redirect (for local
 development use cloudflared or ngrok).
 
-### 4. Onboarding (what your users see)
+### 5. Invite the bot
+
+Open the OAuth2 invite URL (scopes `bot applications.commands`) from the Discord
+developer portal and add it to your server. It posts a welcome message with a
+**Connect GitHub** button.
+
+### 6. Onboarding (what your users see)
 
 1. Bot joins → posts a welcome message with a **Connect GitHub** button.
 2. Button → GitHub App install page → user picks repos.

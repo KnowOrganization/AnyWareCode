@@ -12,16 +12,16 @@ import { emit, readLines } from "./io.js";
 const WORK_ROOT = "/work";
 
 async function main(): Promise<void> {
-  const token = process.env.GITHUB_TOKEN;
-  if (!token) throw new Error("GITHUB_TOKEN is required");
-  if (!process.env.ANTHROPIC_API_KEY) {
-    throw new Error("ANTHROPIC_API_KEY is required");
-  }
-
   const lines = readLines(process.stdin);
   const first = await lines.next();
   if (first.done) throw new Error("no TaskSpec on stdin");
   const spec: TaskSpec = taskSpecSchema.parse(JSON.parse(first.value));
+
+  // Secrets arrive on stdin (not env). The GitHub token stays a local value so
+  // the agent's tools never inherit it; the Anthropic key has to be in env for
+  // the SDK's child process, so it's set as late as possible.
+  const token = spec.githubToken;
+  process.env.ANTHROPIC_API_KEY = spec.anthropicApiKey;
 
   const workdir = path.join(WORK_ROOT, "repo");
   await mkdir(WORK_ROOT, { recursive: true });

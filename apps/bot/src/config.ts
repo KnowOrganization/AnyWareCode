@@ -13,6 +13,15 @@ const configSchema = z.object({
   GITHUB_APP_SLUG: z.string().min(1).default("anywherecode"),
   ANTHROPIC_API_KEY: z.string().min(1),
   DATABASE_URL: z.string().min(1),
+  /**
+   * TLS to Postgres. Required for Supabase (and any managed PG); leave false
+   * for a plain local docker-compose database. "true" enables SSL without
+   * pinning a CA (rejectUnauthorized: false), which matches Supabase pooler.
+   */
+  DATABASE_SSL: z
+    .string()
+    .default("false")
+    .transform((v) => v === "true" || v === "1"),
   /** Public base URL GitHub redirects to after install (no trailing slash). */
   PUBLIC_URL: z.string().url(),
   /** Secret for signing the install `state` param linking guild<->installation. */
@@ -26,6 +35,8 @@ const configSchema = z.object({
   DEFAULT_TASK_CAP: z.coerce.number().int().default(50),
   /** Hard wall-clock limit per task. */
   TASK_TIMEOUT_MINUTES: z.coerce.number().int().default(30),
+  /** Minutes a GitHub-App install link stays valid before it must be reissued. */
+  INSTALL_STATE_TTL_MINUTES: z.coerce.number().int().default(10),
 });
 
 export type Config = z.infer<typeof configSchema>;
