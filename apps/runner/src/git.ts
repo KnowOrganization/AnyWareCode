@@ -1,0 +1,90 @@
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+
+const execFileAsync = promisify(execFile);
+
+const BOT_NAME = "AnywhereCode[bot]";
+const BOT_EMAIL = "anywherecode[bot]@users.noreply.github.com";
+
+export interface GitContext {
+  workdir: string;
+  repo: string;
+  token: string;
+}
+
+function remoteUrl(ctx: GitContext): string {
+  return `https://x-access-token:${ctx.token}@github.com/${ctx.repo}.git`;
+}
+
+async function git(
+  ctx: GitContext,
+  args: string[],
+  opts: { cwd?: string } = {},
+): Promise<string> {
+  const { stdout } = await execFileAsync(
+    "git",
+    ["-c", `user.name=${BOT_NAME}`, "-c", `user.email=${BOT_EMAIL}`, ...args],
+    {
+      cwd: opts.cwd ?? ctx.workdir,
+      env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+      maxBuffer: 16 * 1024 * 1024,
+    },
+  );
+  return stdout.trim();
+}
+
+export async function cloneRepo(
+  ctx: GitContext,
+  baseBranch: string,
+  parentDir: string,
+): Promise<void> {
+  await git(
+    ctx,
+    [
+      "clone",
+      "--depth",
+      "1",
+      "--branch",
+      baseBranch,
+      remoteUrl(ctx),
+      ctx.workdir,
+    ],
+    { cwd: parentDir },
+  );
+}
+
+export async function checkoutTaskBranch(
+  ctx: GitContext,
+  branch: string,
+  resume: boolean,
+): Promise<void> {
+  if (resume) {
+    await git(ctx, ["fetch", "--depth", "1", "origin", branch]);
+    await git(ctx, ["checkout", "-B", branch, `origin/${branch}`]);
+  } else {
+    await git(ctx, ["checkout", "-b", branch]);
+  }
+}
+
+/** Commit everything and push the task branch. Returns false if no changes. */
+export async function commitAndPush(
+  ctx: GitContext,
+  branch: string,
+  message: string,
+): Promise<boolean> {
+  await git(ctx, ["add", "-A"]);
+  const status = await git(ctx, ["status", "--porcelain"]);
+  const hasStagedChanges = status.length > 0;
+  if (hasStagedChanges) {
+    await git(ctx, ["commit", "-m", message]);
+  }
+  // On resume there may be agent-made commits even when the tree is clean now.
+  const unpushed = await git(ctx, [
+    "rev-list",
+    "--count",
+    `origin/${branch}..HEAD`,
+  ]).catch(() => (hasStagedChanges ? "1" : "0"));
+  if (!hasStagedChanges && unpushed === "0") return false;
+  await git(ctx, ["push", "-u", "origin", `HEAD:refs/heads/${branch}`]);
+  return true;
+}
