@@ -10,7 +10,7 @@ COPY tsconfig.base.json ./
 COPY packages/shared packages/shared
 COPY apps/runner apps/runner
 RUN pnpm --filter @anywherecode/shared build && pnpm --filter @anywherecode/runner build
-RUN pnpm --filter @anywherecode/runner --prod deploy /out
+RUN pnpm --filter @anywherecode/runner --prod deploy --legacy /out
 
 FROM node:22-slim
 RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates \

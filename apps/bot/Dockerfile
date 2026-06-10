@@ -10,7 +10,7 @@ COPY tsconfig.base.json ./
 COPY packages/shared packages/shared
 COPY apps/bot apps/bot
 RUN pnpm --filter @anywherecode/shared build && pnpm --filter @anywherecode/bot build
-RUN pnpm --filter @anywherecode/bot --prod deploy /out
+RUN pnpm --filter @anywherecode/bot --prod deploy --legacy /out
 
 FROM node:22-slim
 # The bot spawns runner containers via Docker socket — no git/other packages needed.

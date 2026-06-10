@@ -1,6 +1,4 @@
 import {
-  ChannelType,
-  GuildMember,
   MessageFlags,
   type AutocompleteInteraction,
   type ButtonInteraction,
@@ -125,10 +123,7 @@ async function startAgentTask(
     });
     return;
   }
-  if (
-    !interaction.channel ||
-    interaction.channel.type !== ChannelType.GuildText
-  ) {
+  if (interaction.channel?.isThread()) {
     await interaction.reply({
       content: "Run this in a regular text channel; I'll open a thread there.",
       flags: MessageFlags.Ephemeral,
@@ -141,10 +136,20 @@ async function startAgentTask(
     `${emoji} **${channelRepo.repoFullName}** — ${truncate(prompt, 160)}`,
   );
   const reply = await interaction.fetchReply();
-  const thread = await reply.startThread({
-    name: truncate(`${mode === "code" ? "code" : "ask"}: ${prompt}`, 90),
-    autoArchiveDuration: 1440,
-  });
+  // Use REST directly — avoids requiring the parent channel to be in discord.js cache
+  const { Routes } = await import("discord.js");
+  const threadRaw = (await interaction.client.rest.post(
+    Routes.threads(interaction.channelId, reply.id),
+    {
+      body: {
+        name: truncate(`${mode === "code" ? "code" : "ask"}: ${prompt}`, 90),
+        auto_archive_duration: 1440,
+      },
+    },
+  )) as { id: string };
+  const thread = (await interaction.client.channels.fetch(
+    threadRaw.id,
+  )) as ThreadChannel;
 
   await bumpUsage(ctx.db, guildId, mode);
   void ctx.orchestrator
@@ -172,7 +177,7 @@ async function checkPreconditions(
   guild: Guild,
   mode: "code" | "ask",
 ): Promise<string | null> {
-  if (!(interaction.member instanceof GuildMember)) {
+  if (!interaction.member) {
     return "Couldn't resolve your server membership; try again.";
   }
   if (!canInvoke(guild, interaction.member)) {
@@ -253,7 +258,7 @@ async function handleRepo(
   }
 
   const guild = await ensureGuild(ctx.db, guildId, ctx.config.DEFAULT_TASK_CAP);
-  if (!(interaction.member instanceof GuildMember) || !canInvoke(guild, interaction.member)) {
+  if (!interaction.member || !canInvoke(guild, interaction.member)) {
     await interaction.reply({
       content: "You don't have permission to change this channel's repo.",
       flags: MessageFlags.Ephemeral,
@@ -343,10 +348,7 @@ async function handleConfig(
   ctx: BotContext,
   interaction: ChatInputCommandInteraction,
 ): Promise<void> {
-  if (
-    !(interaction.member instanceof GuildMember) ||
-    !interaction.member.permissions.has("ManageGuild")
-  ) {
+  if (!interaction.memberPermissions?.has("ManageGuild")) {
     await interaction.reply({
       content: "Only server admins can change configuration.",
       flags: MessageFlags.Ephemeral,
@@ -401,10 +403,7 @@ async function handleButton(
     interaction.guildId,
     ctx.config.DEFAULT_TASK_CAP,
   );
-  if (
-    !(interaction.member instanceof GuildMember) ||
-    !canInvoke(guild, interaction.member)
-  ) {
+  if (!interaction.member || !canInvoke(guild, interaction.member)) {
     await interaction.reply({
       content: "You don't have permission to do that.",
       flags: MessageFlags.Ephemeral,

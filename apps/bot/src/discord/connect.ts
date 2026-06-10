@@ -2,7 +2,6 @@ import {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  GuildMember,
   MessageFlags,
   ModalBuilder,
   PermissionFlagsBits,
@@ -36,10 +35,7 @@ async function handleConnectLlm(
   ctx: BotContext,
   interaction: ChatInputCommandInteraction,
 ): Promise<void> {
-  if (
-    !(interaction.member instanceof GuildMember) ||
-    !interaction.member.permissions.has(PermissionFlagsBits.ManageGuild)
-  ) {
+  if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
     await interaction.reply({
       content: "Only server admins can connect an LLM.",
       flags: MessageFlags.Ephemeral,
@@ -73,10 +69,7 @@ export async function handleLlmButton(
   interaction: ButtonInteraction,
   action: string,
 ): Promise<void> {
-  if (
-    !(interaction.member instanceof GuildMember) ||
-    !interaction.member.permissions.has(PermissionFlagsBits.ManageGuild)
-  ) {
+  if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
     await interaction.reply({
       content: "Only server admins can change the LLM credential.",
       flags: MessageFlags.Ephemeral,

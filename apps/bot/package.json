@@ -7,11 +7,11 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "dev": "tsx watch src/index.ts",
+    "dev": "dotenv -e ../../.env -- tsx watch src/index.ts",
     "start": "node dist/index.js",
-    "register-commands": "tsx src/discord/register.ts",
-    "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate"
+    "register-commands": "dotenv -e ../../.env -- tsx src/discord/register.ts",
+    "db:generate": "dotenv -e ../../.env -- drizzle-kit generate",
+    "db:migrate": "dotenv -e ../../.env -- drizzle-kit migrate"
   },
   "dependencies": {
     "@anywherecode/shared": "workspace:*",
@@ -26,6 +26,7 @@
   "devDependencies": {
     "@types/dockerode": "^3.3.0",
     "@types/pg": "^8.11.0",
+    "dotenv-cli": "^11.0.0",
     "drizzle-kit": "^0.31.0",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0",

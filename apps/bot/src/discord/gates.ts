@@ -1,4 +1,9 @@
-import { PermissionFlagsBits, type GuildMember } from "discord.js";
+import {
+  GuildMember,
+  PermissionFlagsBits,
+  PermissionsBitField,
+  type APIInteractionGuildMember,
+} from "discord.js";
 import { eq } from "drizzle-orm";
 import { schema, type Db } from "../db/index.js";
 import type { Guild } from "../db/schema.js";
@@ -6,9 +11,22 @@ import type { Guild } from "../db/schema.js";
 /** /ask is read-only and cheap, so it gets a looser cap than /code. */
 export const ASK_CAP_MULTIPLIER = 4;
 
-export function canInvoke(guild: Guild, member: GuildMember): boolean {
-  if (member.permissions.has(PermissionFlagsBits.ManageGuild)) return true;
-  if (guild.allowedRoleId) return member.roles.cache.has(guild.allowedRoleId);
+export function canInvoke(
+  guild: Guild,
+  member: GuildMember | APIInteractionGuildMember,
+): boolean {
+  const perms =
+    member instanceof GuildMember
+      ? member.permissions
+      : new PermissionsBitField(BigInt(member.permissions));
+  if (perms.has(PermissionFlagsBits.ManageGuild)) return true;
+  if (guild.allowedRoleId) {
+    const roleIds =
+      member instanceof GuildMember
+        ? [...member.roles.cache.keys()]
+        : member.roles;
+    return roleIds.includes(guild.allowedRoleId);
+  }
   return false;
 }
 
