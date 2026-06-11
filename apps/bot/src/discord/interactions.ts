@@ -10,12 +10,9 @@ import {
 import { and, eq, inArray } from "drizzle-orm";
 import type { Config } from "../config.js";
 import { schema, type Db } from "../db/index.js";
-import type { Guild } from "../db/schema.js";
 import type { GitHubService } from "../github/app.js";
 import { createInstallState } from "../github/install-state.js";
-import { resolveLlmAuth } from "../llm/credentials.js";
 import type { TaskOrchestrator } from "../orchestrator/taskRunner.js";
-import { bumpUsage } from "../orchestrator/usage.js";
 import { canInvoke, capState, ensureGuild } from "./gates.js";
 import {
   handleConnectCommand,
@@ -23,6 +20,8 @@ import {
   handleLlmModal,
   handleSetupCommand,
 } from "./connect.js";
+import { checkTaskPreconditions, launchTask, truncate } from "./launch.js";
+import { handleProposalButton } from "./proposals.js";
 import { welcomeMessage } from "./welcome.js";
 
 export interface BotContext {
@@ -108,17 +107,16 @@ async function startAgentTask(
   );
   const guild = await ensureGuild(ctx.db, guildId, ctx.config.DEFAULT_TASK_CAP);
 
-  const refusal = await checkPreconditions(ctx, interaction, guild, mode);
-  if (refusal) {
-    await interaction.reply({ content: refusal, flags: MessageFlags.Ephemeral });
-    return;
-  }
-  const channelRepo = await ctx.db.query.channelRepos.findFirst({
-    where: eq(schema.channelRepos.channelId, interaction.channelId),
-  });
-  if (!channelRepo) {
+  const pre = await checkTaskPreconditions(
+    ctx,
+    guild,
+    interaction.member,
+    mode,
+    interaction.channelId,
+  );
+  if (!pre.ok) {
     await interaction.reply({
-      content: "No repo set for this channel yet — run `/repo set` first.",
+      content: pre.reason,
       flags: MessageFlags.Ephemeral,
     });
     return;
@@ -133,74 +131,25 @@ async function startAgentTask(
 
   const emoji = mode === "code" ? "🧵" : "💬";
   await interaction.reply(
-    `${emoji} **${channelRepo.repoFullName}** — ${truncate(prompt, 160)}`,
+    `${emoji} **${pre.repoFullName}** — ${truncate(prompt, 160)}`,
   );
   const reply = await interaction.fetchReply();
-  // Use REST directly — avoids requiring the parent channel to be in discord.js cache
-  const { Routes } = await import("discord.js");
-  const threadRaw = (await interaction.client.rest.post(
-    Routes.threads(interaction.channelId, reply.id),
-    {
-      body: {
-        name: truncate(`${mode === "code" ? "code" : "ask"}: ${prompt}`, 90),
-        auto_archive_duration: 1440,
-      },
-    },
-  )) as { id: string };
-  const thread = (await interaction.client.channels.fetch(
-    threadRaw.id,
-  )) as ThreadChannel;
-
-  await bumpUsage(ctx.db, guildId, mode);
-  void ctx.orchestrator
-    .run({
-      guildId,
-      installationId: guild.githubInstallationId!,
+  await launchTask(ctx, {
+    guildId,
+    installationId: pre.installationId,
+    repoFullName: pre.repoFullName,
+    channelId: interaction.channelId,
+    mode,
+    prompt,
+    requestedBy: interaction.user.username,
+    thread: {
+      kind: "create",
+      client: interaction.client,
       channelId: interaction.channelId,
-      thread,
-      repoFullName: channelRepo.repoFullName,
-      prompt,
-      requestedBy: interaction.user.username,
-      mode,
-    })
-    .catch(async (err: unknown) => {
-      console.error(`task in thread ${thread.id} failed`, err);
-      await thread
-        .send("⚠️ The task crashed before finishing. Check the bot logs.")
-        .catch(() => {});
-    });
-}
-
-async function checkPreconditions(
-  ctx: BotContext,
-  interaction: ChatInputCommandInteraction,
-  guild: Guild,
-  mode: "code" | "ask",
-): Promise<string | null> {
-  if (!interaction.member) {
-    return "Couldn't resolve your server membership; try again.";
-  }
-  if (!canInvoke(guild, interaction.member)) {
-    return "You don't have permission to run agent tasks here. Ask an admin to grant your role with `/config role`.";
-  }
-  if (!guild.githubInstallationId) {
-    const state = await createInstallState(
-      ctx.db,
-      ctx.config.STATE_SECRET,
-      guild.id,
-      ctx.config.INSTALL_STATE_TTL_MINUTES,
-    );
-    return `GitHub isn't connected yet. An admin needs to [install the GitHub App](${ctx.github.installUrl(state)}).`;
-  }
-  const llmRes = await resolveLlmAuth(ctx.db, ctx.config, guild.id);
-  if (!llmRes.auth) {
-    return `LLM not connected. An admin needs to run \`/connect llm\`.`;
-  }
-  const cap = capState(guild, mode);
-  if (cap.exceeded) {
-    return `This server hit its monthly ${mode === "code" ? "task" : "question"} limit (${cap.used}/${cap.cap}). Resets ${guild.capResetAt.toDateString()}.`;
-  }
-  return null;
+      anchorMessageId: reply.id,
+      name: `${mode === "code" ? "code" : "ask"}: ${prompt}`,
+    },
+  });
 }
 
 const repoCache = new Map<number, { repos: string[]; fetchedAt: number }>();
@@ -384,6 +333,15 @@ async function handleButton(
     return;
   }
 
+  // Proposal buttons carry a proposalId, not a taskId
+  if (action === "proposal") {
+    const sub = parts[2];
+    const proposalId = parts[3];
+    if ((sub !== "run" && sub !== "dismiss") || !proposalId) return;
+    await handleProposalButton(ctx, interaction, sub, proposalId);
+    return;
+  }
+
   // Task action buttons (merge, iterate) require a taskId
   const taskId = parts[2];
   if (!taskId) return;
@@ -469,28 +427,21 @@ async function handleButton(
     await interaction.reply(
       `🔁 Iterating on PR #${task.prNumber}${feedback.length ? ` with ${feedback.length} review note(s)` : ""}…`,
     );
-    await bumpUsage(ctx.db, interaction.guildId, "code");
-    const thread = interaction.channel as ThreadChannel;
-    void ctx.orchestrator
-      .run({
-        guildId: interaction.guildId,
-        installationId: guild.githubInstallationId,
-        channelId: task.channelId,
-        thread,
-        repoFullName: task.repoFullName,
-        prompt: `Iterate on PR #${task.prNumber} (original task: ${task.prompt}). Address the review feedback and any new instructions from the thread.`,
-        requestedBy: interaction.user.username,
-        mode: "code",
-        iterate: {
-          branch: task.branch,
-          prNumber: task.prNumber,
-          transcript: feedback,
-        },
-      })
-      .catch(async (err: unknown) => {
-        console.error(`iterate in thread ${thread.id} failed`, err);
-        await thread.send("⚠️ Iteration crashed before finishing.").catch(() => {});
-      });
+    await launchTask(ctx, {
+      guildId: interaction.guildId,
+      installationId: guild.githubInstallationId,
+      repoFullName: task.repoFullName,
+      channelId: task.channelId,
+      mode: "code",
+      prompt: `Iterate on PR #${task.prNumber} (original task: ${task.prompt}). Address the review feedback and any new instructions from the thread.`,
+      requestedBy: interaction.user.username,
+      thread: { kind: "existing", thread: interaction.channel as ThreadChannel },
+      iterate: {
+        branch: task.branch,
+        prNumber: task.prNumber,
+        transcript: feedback,
+      },
+    });
   }
 }
 
@@ -506,7 +457,3 @@ async function handleModal(
 }
 
 export { welcomeMessage };
-
-function truncate(text: string, max: number): string {
-  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
-}

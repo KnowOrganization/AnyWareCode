@@ -42,6 +42,12 @@ const configSchema = z.object({
   TASK_TIMEOUT_MINUTES: z.coerce.number().int().default(30),
   /** Minutes a GitHub-App install link stays valid before it must be reissued. */
   INSTALL_STATE_TTL_MINUTES: z.coerce.number().int().default(10),
+  /** Model for bot-side mention classification/replies (custom providers use their own). */
+  CHAT_MODEL: z.string().default("claude-haiku-4-5"),
+  /** Per-guild mention classifications per minute (abuse damping, in-memory). */
+  CHAT_RATE_PER_MINUTE: z.coerce.number().int().default(8),
+  /** Minutes a proposed task's Run button stays valid. */
+  CHAT_PROPOSAL_TTL_MINUTES: z.coerce.number().int().default(60),
 });
 
 export type Config = z.infer<typeof configSchema>;
@@ -53,6 +59,15 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       .map((issue) => issue.path.join("."))
       .join(", ");
     throw new Error(`Invalid configuration: ${missing}`);
+  }
+  // RUNNER_NETWORK and RUNNER_HTTPS_PROXY must be set together. A proxy without
+  // the egress network leaves the runner on the default bridge, where the proxy
+  // hostname can't resolve and every git clone / LLM call fails to connect.
+  const { RUNNER_NETWORK, RUNNER_HTTPS_PROXY } = result.data;
+  if (Boolean(RUNNER_NETWORK) !== Boolean(RUNNER_HTTPS_PROXY)) {
+    throw new Error(
+      "Invalid configuration: RUNNER_NETWORK and RUNNER_HTTPS_PROXY must both be set (prod) or both empty (dev).",
+    );
   }
   return result.data;
 }

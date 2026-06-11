@@ -78,6 +78,20 @@ impl, touch nothing else:
 (`index.ts` → `orchestrator.forwardThreadMessage` → container stdin → `AsyncQueue`
 → a new user turn in the live agent stream), prefixed with the Discord username.
 
+**@mentions** (`discord/mentions.ts`): tagging the bot anywhere classifies the
+recent conversation with one bot-side LLM call (`llm/chat.ts` — the ONLY place
+the bot process calls an LLM; forced `decide` tool call, untrusted-history
+system prompt) and routes: `reply` (plain message, no container, no cap),
+`ask`/`code` (gated by `canInvoke`, runs the normal pipeline), or
+`propose_code` (durable `proposals` row + Run/Dismiss buttons; Run re-gates the
+clicker and claims the row atomically). Detection is content-token-based —
+implicit reply pings, `@everyone`/`@here` never trigger. Mentions in an active
+task thread are forwarded to the agent, never classified. All four task entry
+points (slash, Iterate button, mention, proposal Run) funnel through
+`discord/launch.ts` (`checkTaskPreconditions` + `launchTask`) — keep new entry
+points on that path. Chat replies must keep `allowedMentions: { parse: [] }`
+(model output derived from untrusted history must never ping).
+
 ## Invariants & gotchas
 
 - **The runner is a baked image, not live code.** `pnpm dev` reloads only the bot.

@@ -32,6 +32,28 @@ Each Discord server connects its **own LLM credential** (bring your own key).
 Supported: Anthropic API key, Claude Pro/Max subscription token (`claude setup-token`),
 or any Anthropic-compatible endpoint (DeepSeek, LiteLLM proxy, etc.).
 
+## Talk to the bot
+
+Besides `/code` and `/ask`, you can **@mention the bot anywhere** with plain
+language. It reads the recent conversation and decides what to do:
+
+- **Chat** — questions answerable from the conversation get a normal reply.
+  Open to everyone; costs one small LLM call on the server's credential
+  (rate-limited per guild, doesn't touch the monthly task cap).
+- **Explicit task** — `@AnywhereCode fix the login 500` starts a coding task
+  immediately (same thread + PR flow as `/code`). Requires the same role as
+  `/code` (`/config role`).
+- **Inferred task** — tag the bot after a discussion without giving a direct
+  command and it proposes the task it inferred, with **Run / Dismiss** buttons.
+  Run re-checks permissions and caps for whoever clicks; proposals expire
+  after `CHAT_PROPOSAL_TTL_MINUTES` (default 60).
+- **In a finished task thread**, asking for more changes iterates on that
+  thread's existing PR.
+
+Only explicit `@` mentions trigger it — replies to bot messages, `@everyone`,
+and `@here` are ignored. Mentions inside an *active* task thread are forwarded
+to the running agent like any other reply.
+
 ---
 
 ## Local dev setup (step by step)

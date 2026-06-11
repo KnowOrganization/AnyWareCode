@@ -10,6 +10,13 @@ import { loadConfig } from "./config.js";
 import { createDb } from "./db/index.js";
 import { ensureGuild } from "./discord/gates.js";
 import { handleInteraction, type BotContext } from "./discord/interactions.js";
+import {
+  botRoleIdsOf,
+  handleMention,
+  isBotMentioned,
+  stripBotMention,
+} from "./discord/mentions.js";
+import { sweepExpiredProposals } from "./discord/proposals.js";
 import { registerCommands } from "./discord/register.js";
 import { findAnnounceChannel, welcomeMessage } from "./discord/welcome.js";
 import { GitHubService } from "./github/app.js";
@@ -59,6 +66,7 @@ client.on(Events.ClientReady, async (ready) => {
     const ch = await ready.channels.fetch(threadId).catch(() => null);
     if (ch?.isThread()) await ch.send(message).catch(() => {});
   });
+  await sweepExpiredProposals(db);
 });
 
 // Onboarding step 1: bot joins -> welcome message with Connect GitHub + LLM buttons.
@@ -79,15 +87,38 @@ client.on(Events.InteractionCreate, (interaction) => {
   void handleInteraction(ctx, interaction);
 });
 
-// Shared-session feature: replies in an active task thread reach the agent.
+// Message routing: replies in an active task thread reach the agent
+// (shared-session feature); @mentions anywhere else go to the classifier.
 client.on(Events.MessageCreate, (message) => {
-  if (message.author.bot || !message.channel.isThread()) return;
-  if (!message.content.trim()) return;
-  orchestrator.forwardThreadMessage(
-    message.channel.id,
-    message.author.username,
-    message.content,
-  );
+  void (async () => {
+    if (message.author.bot || !message.inGuild()) return;
+    if (!message.content.trim()) return;
+    const botId = client.user!.id;
+    const botRoleIds = botRoleIdsOf(message);
+    const mentioned = isBotMentioned(message.content, botId, botRoleIds);
+
+    if (message.channel.isThread()) {
+      if (orchestrator.activeByThread(message.channel.id)) {
+        // Active task owns the thread — forward only, never also classify.
+        const text = mentioned
+          ? stripBotMention(message.content, botId, botRoleIds)
+          : message.content;
+        if (text.trim()) {
+          orchestrator.forwardThreadMessage(
+            message.channel.id,
+            message.author.username,
+            text,
+          );
+        }
+        return;
+      }
+      if (!mentioned) return;
+      await handleMention(ctx, message);
+      return;
+    }
+    if (!mentioned) return;
+    await handleMention(ctx, message);
+  })().catch((err) => console.error("message handling failed", err));
 });
 
 const server = buildServer({

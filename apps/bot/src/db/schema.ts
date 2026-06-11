@@ -80,6 +80,33 @@ export const tasks = pgTable("tasks", {
   finishedAt: timestamp("finished_at", { withTimezone: true }),
 });
 
+/**
+ * Tasks the bot inferred from conversation and proposed with a Run button.
+ * Durable so Run buttons survive bot restarts; rows are claimed atomically
+ * (pending -> accepted) and expire after CHAT_PROPOSAL_TTL_MINUTES.
+ */
+export const proposals = pgTable("proposals", {
+  id: text("id").primaryKey(),
+  guildId: text("guild_id").notNull(),
+  /** Repo-binding text channel (parent channel when proposed inside a thread). */
+  channelId: text("channel_id").notNull(),
+  /** Set when the proposal was made inside an existing thread. */
+  threadId: text("thread_id"),
+  repoFullName: text("repo_full_name").notNull(),
+  prompt: text("prompt").notNull(),
+  summary: text("summary").notNull(),
+  /** Discord user whose mention produced the proposal. */
+  authorId: text("author_id").notNull(),
+  status: text("status", { enum: ["pending", "accepted", "dismissed"] })
+    .notNull()
+    .default("pending"),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
 export type Guild = typeof guilds.$inferSelect;
 export type Task = typeof tasks.$inferSelect;
 export type SetupState = typeof setupStates.$inferSelect;
+export type Proposal = typeof proposals.$inferSelect;

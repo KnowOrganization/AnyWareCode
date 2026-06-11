@@ -131,7 +131,7 @@ export async function resolveLlmAuth(
 export async function validateLlmAuth(
   auth: LlmAuth,
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
-  const { url, headers } = buildProbeRequest(auth);
+  const { url, headers } = buildAnthropicHeaders(auth);
   try {
     const res = await fetch(url, {
       method: "POST",
@@ -164,7 +164,9 @@ export async function validateLlmAuth(
   }
 }
 
-function buildProbeRequest(auth: LlmAuth): {
+/** Messages-API endpoint + auth headers for each provider type. Single source
+ * for the three auth shapes; used by credential probes and the chat classifier. */
+export function buildAnthropicHeaders(auth: LlmAuth): {
   url: string;
   headers: Record<string, string>;
 } {
