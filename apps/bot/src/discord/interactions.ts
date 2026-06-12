@@ -30,6 +30,7 @@ import { handleMemorySuggestionButton } from "./memorySuggestions.js";
 import { handleOssCommand } from "./oss.js";
 import { handleProposalButton } from "./proposals.js";
 import { handleReviewCommand } from "./review.js";
+import { handleScheduleCommand } from "./schedule.js";
 import { postShipLog } from "./shiplog.js";
 import { welcomeMessage } from "./welcome.js";
 import { captureError } from "../observability.js";
@@ -112,6 +113,8 @@ async function handleCommand(
       return handleMemoryCommand(ctx, interaction);
     case "review":
       return handleReviewCommand(ctx, interaction);
+    case "schedule":
+      return handleScheduleCommand(ctx, interaction);
   }
 }
 

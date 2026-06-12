@@ -34,6 +34,7 @@ import {
   pingDocker,
   recoverStaleTasks,
 } from "./orchestrator/recovery.js";
+import { startScheduler } from "./orchestrator/scheduler.js";
 import { TaskOrchestrator } from "./orchestrator/taskRunner.js";
 import { DockerWorkspace } from "./orchestrator/workspace.js";
 
@@ -87,6 +88,7 @@ client.on(Events.ClientReady, async (ready) => {
   await pruneExpiredInstallStates(db);
   await pruneWebhookDeliveries(db);
   startPackAnnouncer(db, client);
+  startScheduler(ctx);
 });
 
 // Bot removed from a server: erase the guild's data (privacy + housekeeping).

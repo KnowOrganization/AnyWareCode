@@ -104,6 +104,57 @@ export const commands = [
         ),
     ),
   new SlashCommandBuilder()
+    .setName("schedule")
+    .setDescription("Recurring tasks that arrive as morning proposal cards")
+    .addSubcommand((sub) =>
+      sub
+        .setName("add")
+        .setDescription("Add a recurring task (posts a Run/Dismiss card; never runs unattended)")
+        .addStringOption((opt) =>
+          opt
+            .setName("prompt")
+            .setDescription("Task for the agent, e.g. 'bump dependencies and fix breakage'")
+            .setRequired(true),
+        )
+        .addStringOption((opt) =>
+          opt
+            .setName("cadence")
+            .setDescription("How often")
+            .setRequired(true)
+            .addChoices(
+              { name: "daily", value: "daily" },
+              { name: "weekly", value: "weekly" },
+            ),
+        )
+        .addIntegerOption((opt) =>
+          opt
+            .setName("hour_utc")
+            .setDescription("Hour of day, UTC (0-23)")
+            .setMinValue(0)
+            .setMaxValue(23)
+            .setRequired(true),
+        )
+        .addIntegerOption((opt) =>
+          opt
+            .setName("day")
+            .setDescription("Weekly only: 0 = Sunday … 6 = Saturday")
+            .setMinValue(0)
+            .setMaxValue(6)
+            .setRequired(false),
+        ),
+    )
+    .addSubcommand((sub) =>
+      sub.setName("list").setDescription("List this server's schedules"),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName("remove")
+        .setDescription("Remove a schedule")
+        .addStringOption((opt) =>
+          opt.setName("id").setDescription("Schedule id from /schedule list").setRequired(true),
+        ),
+    ),
+  new SlashCommandBuilder()
     .setName("review")
     .setDescription("Have the agent review a pull request (read-only, /ask quota)")
     .addIntegerOption((opt) =>
