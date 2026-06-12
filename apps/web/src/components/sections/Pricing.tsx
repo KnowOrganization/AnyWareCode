@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/Badge";
 import { SectionHeading } from "@/components/ui/SectionHeading";
 import { Reveal } from "@/components/Reveal";
 import { cn } from "@/lib/cn";
-import { tiers, INSTALL_URL, DASHBOARD_URL, type Tier } from "@/lib/site";
+import { taskPack, tiers, INSTALL_URL, DASHBOARD_URL, type Tier } from "@/lib/site";
 
 function CheckIcon() {
   return (
@@ -101,7 +101,7 @@ export function Pricing() {
               Simple, <span className="text-gradient">per-server</span> pricing
             </>
           }
-          subtitle="Start free for 14 days. Bring your own LLM key — you only pay for the seat."
+          subtitle="One subscription for the whole server — no per-seat licenses. 14-day trial, then bring your own LLM key."
         />
 
         <Reveal
@@ -116,7 +116,11 @@ export function Pricing() {
           ))}
         </Reveal>
 
-        <p className="mx-auto mt-8 max-w-2xl text-center text-sm text-faint">
+        <p className="mx-auto mt-8 max-w-2xl text-center text-sm text-muted">
+          🔋 <strong className="text-fg">{taskPack.name} — {taskPack.price}</strong>
+          : {taskPack.blurb}
+        </p>
+        <p className="mx-auto mt-4 max-w-2xl text-center text-sm text-faint">
           Paid plans check out per server from your dashboard after you sign in
           with Discord. Caps reset monthly.
         </p>

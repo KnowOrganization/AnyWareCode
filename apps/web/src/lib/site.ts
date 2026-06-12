@@ -149,7 +149,7 @@ export const securityPoints: SecurityPoint[] = [
 ];
 
 export interface Tier {
-  id: "free" | "pro" | "team";
+  id: "oss" | "pro" | "studio";
   name: string;
   price: string;
   period: string;
@@ -163,17 +163,17 @@ export interface Tier {
 
 export const tiers: Tier[] = [
   {
-    id: "free",
-    name: "Free",
+    id: "oss",
+    name: "OSS Community",
     price: "$0",
     period: "/mo",
-    tagline: "Kick the tires. 14-day trial on us, then bring your own key.",
+    tagline: "For verified public open-source servers. Your runs are the demo.",
     features: [
-      "5 code tasks / mo",
-      "20 questions / mo",
-      "14-day trial on the platform key",
-      "Bring your own LLM after trial",
-      "Community support",
+      "30 pooled code tasks / mo",
+      "Unlimited questions on public repos",
+      "Maintainer-gated runs",
+      "Bring your own LLM key",
+      "Apply with /oss apply",
     ],
     cta: "Add to Discord",
     external: true,
@@ -183,35 +183,43 @@ export const tiers: Tier[] = [
     name: "Pro",
     price: "$20",
     period: "/mo",
-    tagline: "For active teams shipping every day.",
+    tagline: "One shared engineer for the whole server — no per-seat math.",
     features: [
       "100 code tasks / mo",
       "400 questions / mo",
-      "Bring your own LLM key",
-      "Priority task queue",
-      "Email support",
+      "2 concurrent tasks",
+      "Server Memory + Review agent",
+      "Scheduled tasks",
     ],
     cta: "Get Pro",
     external: false,
     featured: true,
   },
   {
-    id: "team",
-    name: "Team",
+    id: "studio",
+    name: "Studio",
     price: "$50",
     period: "/mo",
-    tagline: "Heavy throughput across many channels.",
+    tagline: "For studios living in voice channels and shipping daily.",
     features: [
       "500 code tasks / mo",
       "2,000 questions / mo",
-      "Bring your own LLM key",
-      "Priority queue + support",
-      "Multi-repo per channel",
+      "5 concurrent tasks",
+      "Voice → PR Standup Mode",
+      "Spectate + preview deploys",
     ],
-    cta: "Get Team",
+    cta: "Get Studio",
     external: false,
   },
 ];
+
+/** Community-funded compute — shown under the tier grid. */
+export const taskPack = {
+  name: "Task Pack",
+  price: "$10",
+  blurb:
+    "50 extra code tasks for the server, buyable by ANY member — Discord-boost style, with public credit. Never expires while subscribed.",
+} as const;
 
 export interface Faq {
   q: string;
@@ -225,7 +233,15 @@ export const faqs: Faq[] = [
   },
   {
     q: "Whose LLM key is used?",
-    a: "Yours. Every server connects its own credential, encrypted per-server with AES-256-GCM. The 14-day trial runs on a small platform allowance; after that, bring your own.",
+    a: "Yours. Every server connects its own credential, encrypted per-server with AES-256-GCM. The 14-day trial runs on a small platform allowance; after that, bring your own. An Anthropic API key is the recommended path for production servers.",
+  },
+  {
+    q: "What's a task pack?",
+    a: "Community-funded compute: any member can buy 50 extra code tasks for the server ($10), Discord-boost style — with public credit in the server. Packs sit in reserve and are spent after the monthly plan cap.",
+  },
+  {
+    q: "Why does the trial have requirements?",
+    a: "The trial runs on our key, so it's gated against farming: the server must be at least 30 days old with 5+ human members, and each GitHub org gets one trial. Connecting your own key skips all gates.",
   },
   {
     q: "Which providers are supported?",
