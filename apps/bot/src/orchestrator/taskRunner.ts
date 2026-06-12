@@ -14,6 +14,7 @@ import {
 } from "@anywherecode/shared";
 import type { Config } from "../config.js";
 import { schema, type Db } from "@anywherecode/db";
+import { mcpServersForSpec } from "../discord/mcp.js";
 import { maybeSuggestMemory } from "../discord/memorySuggestions.js";
 import { prCardButtons } from "../discord/preview-card.js";
 import type { GitHubService } from "../github/app.js";
@@ -233,6 +234,8 @@ export class TaskOrchestrator {
         eq(schema.serverMemories.repoFullName, params.repoFullName),
       ),
     });
+    // Server-attached MCP extensions (auth decrypted only here, into stdin).
+    const mcp = await mcpServersForSpec(this.db, this.config, params.guildId);
     // Provenance: the receipt's identity line + commit trailers.
     const sponsorLink = params.requestedById
       ? await getUserLink(this.db, params.requestedById)
@@ -262,10 +265,13 @@ export class TaskOrchestrator {
       resumeBranch: Boolean(params.iterate),
       githubToken: token,
       llmAuth: resolved.auth,
-      mcpServers: [],
+      mcpServers: mcp.servers,
       ...(memoryRow?.content.trim() ? { memory: memoryRow.content } : {}),
       ...(params.mode === "code" ? { provenance: { trailers } } : {}),
     };
+    for (const warning of mcp.warnings) {
+      await thread.send(warning).catch(() => {});
+    }
 
     // Only non-secret config goes in the container environment.
     const env: Record<string, string> = {

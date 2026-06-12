@@ -22,6 +22,7 @@ import {
 } from "../llm/credentials.js";
 import { capState, ensureGuild, planSummary } from "./gates.js";
 import type { BotContext } from "./interactions.js";
+import { handleConnectMcp } from "./mcp.js";
 
 export async function handleConnectCommand(
   ctx: BotContext,
@@ -30,6 +31,7 @@ export async function handleConnectCommand(
   const sub = interaction.options.getSubcommand();
   if (sub === "llm") await handleConnectLlm(ctx, interaction);
   else if (sub === "github") await handleConnectGithub(ctx, interaction);
+  else if (sub === "mcp") await handleConnectMcp(ctx, interaction);
 }
 
 async function handleConnectLlm(

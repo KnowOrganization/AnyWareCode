@@ -31,6 +31,44 @@ export const commands = [
     )
     .addSubcommand((sub) =>
       sub.setName("github").setDescription("Connect GitHub repositories"),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName("mcp")
+        .setDescription("Attach MCP servers (Sentry, DBs, trackers) to your agent")
+        .addStringOption((opt) =>
+          opt
+            .setName("action")
+            .setDescription("What to do")
+            .setRequired(true)
+            .addChoices(
+              { name: "add", value: "add" },
+              { name: "list", value: "list" },
+              { name: "remove", value: "remove" },
+            ),
+        )
+        .addStringOption((opt) =>
+          opt.setName("name").setDescription("Server name (e.g. sentry)").setRequired(false),
+        )
+        .addStringOption((opt) =>
+          opt.setName("url").setDescription("https URL of the MCP server").setRequired(false),
+        )
+        .addStringOption((opt) =>
+          opt
+            .setName("auth_token")
+            .setDescription("Bearer token (encrypted at rest, never posted)")
+            .setRequired(false),
+        )
+        .addStringOption((opt) =>
+          opt
+            .setName("type")
+            .setDescription("Transport (default http)")
+            .setRequired(false)
+            .addChoices(
+              { name: "http", value: "http" },
+              { name: "sse", value: "sse" },
+            ),
+        ),
     ),
   new SlashCommandBuilder()
     .setName("setup")
