@@ -32,6 +32,7 @@ import { handlePlanVoteButton, maybeRequirePlanVote } from "./plan-votes.js";
 import { handleProposalButton, setProposalMessageId } from "./proposals.js";
 import { handleReviewCommand } from "./review.js";
 import { handleScheduleCommand } from "./schedule.js";
+import { handleStandupCommand } from "../voice/standup.js";
 import { postShipLog } from "./shiplog.js";
 import { welcomeMessage } from "./welcome.js";
 import { captureError } from "../observability.js";
@@ -116,6 +117,8 @@ async function handleCommand(
       return handleReviewCommand(ctx, interaction);
     case "schedule":
       return handleScheduleCommand(ctx, interaction);
+    case "standup":
+      return handleStandupCommand(ctx, interaction);
   }
 }
 

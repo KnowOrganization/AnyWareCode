@@ -104,6 +104,17 @@ export const commands = [
         ),
     ),
   new SlashCommandBuilder()
+    .setName("standup")
+    .setDescription("Voice → PR: listen in a voice channel and turn action items into proposals")
+    .addSubcommand((sub) =>
+      sub
+        .setName("start")
+        .setDescription("Start recording (Studio tier; run in a repo-bound text channel while in voice)"),
+    )
+    .addSubcommand((sub) =>
+      sub.setName("stop").setDescription("Stop the session and post the action items"),
+    ),
+  new SlashCommandBuilder()
     .setName("schedule")
     .setDescription("Recurring tasks that arrive as morning proposal cards")
     .addSubcommand((sub) =>
