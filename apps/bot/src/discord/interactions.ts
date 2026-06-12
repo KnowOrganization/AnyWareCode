@@ -27,6 +27,7 @@ import { handleMemoryCommand, handleMemoryModal } from "./memory.js";
 import { handleMemorySuggestionButton } from "./memorySuggestions.js";
 import { handleOssCommand } from "./oss.js";
 import { handleProposalButton } from "./proposals.js";
+import { postShipLog } from "./shiplog.js";
 import { welcomeMessage } from "./welcome.js";
 import { captureError } from "../observability.js";
 
@@ -342,6 +343,32 @@ async function handleConfig(
     await handleConfigIssues(ctx, interaction);
     return;
   }
+
+  if (sub === "shiplog") {
+    const channel = interaction.options.getChannel("channel");
+    if (channel) {
+      const resolved = await interaction.client.channels
+        .fetch(channel.id)
+        .catch(() => null);
+      if (!resolved?.isSendable()) {
+        await interaction.reply({
+          content: "I can't send messages in that channel — pick one where I have Send Messages.",
+          flags: MessageFlags.Ephemeral,
+        });
+        return;
+      }
+    }
+    await ctx.db
+      .update(schema.guilds)
+      .set({ shiplogChannelId: channel?.id ?? null })
+      .where(eq(schema.guilds.id, guildId));
+    await interaction.reply(
+      channel
+        ? `🚢 Merged agent PRs will be announced in <#${channel.id}>.`
+        : "✅ Ship log turned off.",
+    );
+    return;
+  }
 }
 
 async function handleConfigIssues(
@@ -512,6 +539,11 @@ async function handleButton(
     await interaction.editReply(
       `✅ Merged PR #${task.prNumber} (squash) — requested by ${interaction.user.username}.`,
     );
+    void postShipLog(
+      { db: ctx.db, client: interaction.client },
+      task,
+      interaction.user.username,
+    ).catch((err) => captureError(err, { msg: "ship log (merge button) failed" }));
     return;
   }
 

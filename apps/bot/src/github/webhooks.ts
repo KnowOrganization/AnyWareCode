@@ -1,8 +1,9 @@
 import type { Client } from "discord.js";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { schema, type Db, type Guild } from "@anywherecode/db";
 import type { Config } from "../config.js";
 import { handleIssueEvent } from "../discord/issue-feed.js";
+import { postShipLog } from "../discord/shiplog.js";
 import { log } from "../observability.js";
 import type { GitHubService } from "./app.js";
 
@@ -63,5 +64,31 @@ export function registerWebhookHandlers(deps: WebhookDeps): void {
         ),
       },
     );
+  });
+
+  // Ship Log trigger B: an agent PR merged on GitHub (not via the Merge
+  // button). Matching a task row by guild+repo+PR number IS the
+  // "was-this-an-agent-PR" test; postShipLog's atomic claim dedups the race
+  // with the button trigger.
+  webhooks.on("pull_request.closed", ({ payload }) => {
+    if (!payload.installation || !payload.pull_request.merged) return;
+    void (async () => {
+      const guilds = await guildsForInstallation(deps.db, payload.installation!.id);
+      for (const guild of guilds) {
+        const task = await deps.db.query.tasks.findFirst({
+          where: and(
+            eq(schema.tasks.guildId, guild.id),
+            eq(schema.tasks.repoFullName, payload.repository.full_name),
+            eq(schema.tasks.prNumber, payload.pull_request.number),
+          ),
+        });
+        if (!task) continue;
+        await postShipLog(
+          { db: deps.db, client: deps.client },
+          task,
+          payload.pull_request.merged_by?.login ?? null,
+        );
+      }
+    })().catch((err) => log.warn({ err }, "ship log webhook failed"));
   });
 }

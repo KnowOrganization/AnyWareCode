@@ -125,6 +125,17 @@ export const commands = [
     )
     .addSubcommand((sub) =>
       sub
+        .setName("shiplog")
+        .setDescription("Auto-post merged agent PRs to a channel (build in public)")
+        .addChannelOption((opt) =>
+          opt
+            .setName("channel")
+            .setDescription("Ship-log channel; omit to turn it off")
+            .setRequired(false),
+        ),
+    )
+    .addSubcommand((sub) =>
+      sub
         .setName("issues")
         .setDescription("Feed new GitHub issues into a channel as Run/Dismiss cards")
         .addStringOption((opt) =>
