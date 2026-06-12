@@ -1,4 +1,3 @@
-import { fileURLToPath } from "node:url";
 import {
   Client,
   Events,
@@ -7,7 +6,12 @@ import {
 } from "discord.js";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { loadConfig } from "./config.js";
-import { createDb } from "./db/index.js";
+import {
+  closeDb,
+  createDb,
+  deleteGuildData,
+  migrationsDir,
+} from "@anywherecode/db";
 import { ensureGuild } from "./discord/gates.js";
 import { handleInteraction, type BotContext } from "./discord/interactions.js";
 import {
@@ -20,20 +24,24 @@ import { sweepExpiredProposals } from "./discord/proposals.js";
 import { registerCommands } from "./discord/register.js";
 import { findAnnounceChannel, welcomeMessage } from "./discord/welcome.js";
 import { GitHubService } from "./github/app.js";
-import { createInstallState } from "./github/install-state.js";
+import { createInstallState, pruneExpiredInstallStates } from "./github/install-state.js";
 import { buildServer } from "./http/server.js";
-import { killStaleContainers, recoverStaleTasks } from "./orchestrator/recovery.js";
+import { captureError, initSentry, log } from "./observability.js";
+import {
+  killStaleContainers,
+  pingDocker,
+  recoverStaleTasks,
+} from "./orchestrator/recovery.js";
 import { TaskOrchestrator } from "./orchestrator/taskRunner.js";
 import { DockerWorkspace } from "./orchestrator/workspace.js";
 
 const config = loadConfig();
+initSentry(config.SENTRY_DSN, config.NODE_ENV);
 const db = createDb(config.DATABASE_URL, config.DATABASE_SSL);
 
 // Run migrations on every boot (idempotent). Keeps DB schema in sync without
 // a separate migration step in the deploy pipeline.
-await migrate(db, {
-  migrationsFolder: fileURLToPath(new URL("../drizzle", import.meta.url)),
-});
+await migrate(db, { migrationsFolder: migrationsDir });
 
 const github = new GitHubService(config);
 const orchestrator = new TaskOrchestrator(
@@ -57,7 +65,7 @@ const client = new Client({
 });
 
 client.on(Events.ClientReady, async (ready) => {
-  console.log(`Logged in as ${ready.user.tag}`);
+  log.info(`Logged in as ${ready.user.tag}`);
 
   // Kill any containers left over from before the restart, then mark their
   // tasks failed and refund quota. Notifications require the Discord client.
@@ -67,11 +75,20 @@ client.on(Events.ClientReady, async (ready) => {
     if (ch?.isThread()) await ch.send(message).catch(() => {});
   });
   await sweepExpiredProposals(db);
+  await pruneExpiredInstallStates(db);
+});
+
+// Bot removed from a server: erase the guild's data (privacy + housekeeping).
+client.on(Events.GuildDelete, async (guild) => {
+  await deleteGuildData(db, guild.id).catch((err) =>
+    captureError(err, { msg: "guild data deletion failed", guildId: guild.id }),
+  );
+  log.info(`Removed from guild ${guild.id}; data deleted`);
 });
 
 // Onboarding step 1: bot joins -> welcome message with Connect GitHub + LLM buttons.
 client.on(Events.GuildCreate, async (guild) => {
-  await ensureGuild(db, guild.id, config.DEFAULT_TASK_CAP);
+  await ensureGuild(db, guild.id, config);
   const channel = findAnnounceChannel(guild);
   if (!channel) return;
   const state = await createInstallState(
@@ -118,7 +135,7 @@ client.on(Events.MessageCreate, (message) => {
     }
     if (!mentioned) return;
     await handleMention(ctx, message);
-  })().catch((err) => console.error("message handling failed", err));
+  })().catch((err) => captureError(err, { msg: "message handling failed" }));
 });
 
 const server = buildServer({
@@ -132,7 +149,35 @@ const server = buildServer({
       "✅ GitHub connected. Next: run `/connect llm` to add your LLM credential, then `/repo set` in a channel.",
     );
   },
+  isDiscordReady: () => client.isReady(),
+  pingDocker,
 });
 
 await server.listen({ port: config.HTTP_PORT, host: "0.0.0.0" });
 await client.login(config.DISCORD_TOKEN);
+
+// Graceful shutdown: stop taking new events, drain connections, exit. In-flight
+// containers keep running detached; the next boot's recovery sweep settles them.
+let shuttingDown = false;
+async function shutdown(signal: string): Promise<void> {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  log.info(`${signal} received — shutting down`);
+  const force = setTimeout(() => {
+    log.error("shutdown timed out, forcing exit");
+    process.exit(1);
+  }, 10_000);
+  force.unref();
+  try {
+    await server.close();
+    await client.destroy();
+    await closeDb(db);
+    log.info("shutdown complete");
+    process.exit(0);
+  } catch (err) {
+    captureError(err, { msg: "shutdown error" });
+    process.exit(1);
+  }
+}
+process.on("SIGTERM", () => void shutdown("SIGTERM"));
+process.on("SIGINT", () => void shutdown("SIGINT"));

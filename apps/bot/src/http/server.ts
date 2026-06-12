@@ -1,7 +1,7 @@
 import Fastify, { type FastifyInstance } from "fastify";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import type { Config } from "../config.js";
-import { schema, type Db } from "../db/index.js";
+import { schema, type Db } from "@anywherecode/db";
 import type { GitHubService } from "../github/app.js";
 import { consumeInstallState } from "../github/install-state.js";
 
@@ -11,12 +11,31 @@ export interface ServerDeps {
   github: GitHubService;
   /** Lets the Discord side announce "Ready" once the link lands. */
   onInstallationLinked: (guildId: string) => Promise<void>;
+  /** Readiness probes (Discord gateway, container runtime). */
+  isDiscordReady: () => boolean;
+  pingDocker: () => Promise<boolean>;
 }
 
 export function buildServer(deps: ServerDeps): FastifyInstance {
   const app = Fastify({ logger: true });
 
-  app.get("/healthz", async () => ({ ok: true }));
+  // Liveness: the process is up. Platform uses this to decide on restarts.
+  app.get("/livez", async () => ({ ok: true }));
+
+  // Readiness: dependencies reachable. 503 pulls the instance from rotation
+  // without killing it.
+  app.get("/healthz", async (_req, reply) => {
+    const checks = { db: false, discord: deps.isDiscordReady(), docker: false };
+    try {
+      await deps.db.execute(sql`select 1`);
+      checks.db = true;
+    } catch {
+      /* db unreachable */
+    }
+    checks.docker = await deps.pingDocker();
+    const ok = checks.db && checks.discord && checks.docker;
+    return reply.code(ok ? 200 : 503).send({ ok, checks });
+  });
 
   /**
    * GitHub App "Setup URL". GitHub redirects here after install with

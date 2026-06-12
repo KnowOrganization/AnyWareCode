@@ -12,14 +12,14 @@ import {
   type ModalSubmitInteraction,
 } from "discord.js";
 import { eq } from "drizzle-orm";
-import { schema } from "../db/index.js";
+import { schema } from "@anywherecode/db";
 import { createInstallState } from "../github/install-state.js";
 import {
   encryptCredential,
   validateLlmAuth,
   type LlmAuth,
 } from "../llm/credentials.js";
-import { ensureGuild } from "./gates.js";
+import { capState, ensureGuild, planSummary } from "./gates.js";
 import type { BotContext } from "./interactions.js";
 
 export async function handleConnectCommand(
@@ -43,7 +43,7 @@ async function handleConnectLlm(
     return;
   }
   const guildId = interaction.guildId!;
-  const guild = await ensureGuild(ctx.db, guildId, ctx.config.DEFAULT_TASK_CAP);
+  const guild = await ensureGuild(ctx.db, guildId, ctx.config);
   await interaction.reply(llmChooserMessage(guild.llmProviderType ?? null));
 }
 
@@ -102,7 +102,7 @@ export async function handleLlmButton(
     const guild = await ensureGuild(
       ctx.db,
       interaction.guildId,
-      ctx.config.DEFAULT_TASK_CAP,
+      ctx.config,
     );
     await interaction.reply(llmChooserMessage(guild.llmProviderType ?? null));
     return;
@@ -175,7 +175,7 @@ export async function handleLlmModal(
   }
 
   const enc = encryptCredential(ctx.config.CREDENTIAL_SECRET, guildId, auth.token);
-  await ensureGuild(ctx.db, guildId, ctx.config.DEFAULT_TASK_CAP);
+  await ensureGuild(ctx.db, guildId, ctx.config);
   await ctx.db
     .update(schema.guilds)
     .set({
@@ -197,7 +197,7 @@ export async function handleSetupCommand(
   interaction: ChatInputCommandInteraction,
 ): Promise<void> {
   const guildId = interaction.guildId!;
-  const guild = await ensureGuild(ctx.db, guildId, ctx.config.DEFAULT_TASK_CAP);
+  const guild = await ensureGuild(ctx.db, guildId, ctx.config);
 
   const githubStatus = guild.githubInstallationId
     ? `✅ GitHub connected (install #${guild.githubInstallationId})`
@@ -212,13 +212,47 @@ export async function handleSetupCommand(
     llmStatus = `❌ LLM not connected — run \`/connect llm\``;
   }
 
-  const { capState } = await import("./gates.js");
   const codeCap = capState(guild, "code");
   const askCap = capState(guild, "ask");
   const usageStatus = `📊 Usage this month: ${codeCap.used}/${codeCap.cap} code tasks, ${askCap.used}/${askCap.cap} questions`;
 
   await interaction.reply({
     content: [githubStatus, llmStatus, usageStatus].join("\n"),
+    flags: MessageFlags.Ephemeral,
+  });
+}
+
+export async function handleBillingCommand(
+  ctx: BotContext,
+  interaction: ChatInputCommandInteraction,
+): Promise<void> {
+  const guildId = interaction.guildId!;
+  const guild = await ensureGuild(ctx.db, guildId, ctx.config);
+  const plan = planSummary(guild);
+  const code = capState(guild, "code");
+  const ask = capState(guild, "ask");
+
+  const lines = [`💳 **Plan:** ${plan.tier}`];
+  if (plan.trialDaysLeft !== null) {
+    lines.push(
+      plan.trialDaysLeft > 0
+        ? `⏳ Trial: ${plan.trialDaysLeft} day(s) left (running on the platform key).`
+        : `⏳ Trial ended — connect your own key with \`/connect llm\`.`,
+    );
+  }
+  if (guild.currentPeriodEnd && plan.status === "active") {
+    lines.push(`🔁 Renews ${guild.currentPeriodEnd.toDateString()}.`);
+  }
+  lines.push(
+    `📊 This month: ${code.used}/${code.cap} code tasks, ${ask.used}/${ask.cap} questions.`,
+  );
+  if (ctx.config.WEB_URL) {
+    const verb = plan.status === "active" ? "Manage billing" : "Upgrade";
+    lines.push(`🔗 ${verb}: ${ctx.config.WEB_URL}`);
+  }
+
+  await interaction.reply({
+    content: lines.join("\n"),
     flags: MessageFlags.Ephemeral,
   });
 }

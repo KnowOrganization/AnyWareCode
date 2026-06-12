@@ -6,7 +6,7 @@ import {
 } from "node:crypto";
 import { eq } from "drizzle-orm";
 import type { Config } from "../config.js";
-import { schema, type Db } from "../db/index.js";
+import { schema, type Db } from "@anywherecode/db";
 
 function deriveKey(secret: string): Buffer {
   return Buffer.from(

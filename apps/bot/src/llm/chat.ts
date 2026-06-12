@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { log } from "../observability.js";
 import { buildAnthropicHeaders, type LlmAuth } from "./credentials.js";
 
 /**
@@ -177,7 +178,7 @@ export async function classifyIntent(
       body: JSON.stringify(body),
     });
     if (res.status !== 200) {
-      console.error(`chat classify: status ${res.status}`);
+      log.warn({ status: res.status }, "chat classify non-200");
       return FALLBACK;
     }
     const data = (await res.json()) as {
@@ -191,7 +192,7 @@ export async function classifyIntent(
     if (!parsed.success) return FALLBACK;
     return parsed.data;
   } catch (err) {
-    console.error("chat classify failed", err);
+    log.warn({ err }, "chat classify failed");
     return FALLBACK;
   }
 }

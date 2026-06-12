@@ -1,6 +1,6 @@
 import Docker from "dockerode";
 import { inArray } from "drizzle-orm";
-import { schema, type Db } from "../db/index.js";
+import { schema, type Db } from "@anywherecode/db";
 import { refundUsage } from "./usage.js";
 
 export async function recoverStaleTasks(
@@ -19,6 +19,16 @@ export async function recoverStaleTasks(
       task.threadId,
       "⚠️ Bot restarted mid-task. Task marked failed and quota refunded — rerun `/code` to retry.",
     ).catch(() => {});
+  }
+}
+
+/** Health probe: is the Docker daemon reachable? */
+export async function pingDocker(): Promise<boolean> {
+  try {
+    await new Docker().ping();
+    return true;
+  } catch {
+    return false;
   }
 }
 

@@ -48,6 +48,20 @@ const configSchema = z.object({
   CHAT_RATE_PER_MINUTE: z.coerce.number().int().default(8),
   /** Minutes a proposed task's Run button stays valid. */
   CHAT_PROPOSAL_TTL_MINUTES: z.coerce.number().int().default(60),
+  /** Sentry error tracking; disabled when empty. */
+  SENTRY_DSN: z.string().default(""),
+  /** Deploy environment tag for logs/Sentry. */
+  NODE_ENV: z.string().default("development"),
+  /** Max task/question prompt length; guards token/cap abuse. */
+  MAX_PROMPT_CHARS: z.coerce.number().int().default(8000),
+  /** Free trial length (days). Trial runs on the platform key. */
+  TRIAL_DAYS: z.coerce.number().int().default(14),
+  /** Monthly /code cap during the trial (bounds platform-key token cost). */
+  PLATFORM_TRIAL_TASK_CAP: z.coerce.number().int().default(10),
+  /** Monthly /code cap after the trial without a paid subscription (BYO required). */
+  FREE_TASK_CAP: z.coerce.number().int().default(5),
+  /** Public dashboard URL for upgrade/billing links. */
+  WEB_URL: z.string().default(""),
 });
 
 export type Config = z.infer<typeof configSchema>;

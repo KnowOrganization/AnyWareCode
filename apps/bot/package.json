@@ -9,25 +9,23 @@
     "test": "vitest run",
     "dev": "dotenv -e ../../.env -- tsx watch src/index.ts",
     "start": "node dist/index.js",
-    "register-commands": "dotenv -e ../../.env -- tsx src/discord/register.ts",
-    "db:generate": "dotenv -e ../../.env -- drizzle-kit generate",
-    "db:migrate": "dotenv -e ../../.env -- drizzle-kit migrate"
+    "register-commands": "dotenv -e ../../.env -- tsx src/discord/register.ts"
   },
   "dependencies": {
+    "@anywherecode/db": "workspace:*",
     "@anywherecode/shared": "workspace:*",
+    "@sentry/node": "^10.57.0",
     "discord.js": "^14.16.0",
     "dockerode": "^4.0.0",
     "drizzle-orm": "^0.44.0",
     "fastify": "^5.0.0",
     "octokit": "^4.0.0",
-    "pg": "^8.13.0",
+    "pino": "^10.3.1",
     "zod": "^3.25.0"
   },
   "devDependencies": {
     "@types/dockerode": "^3.3.0",
-    "@types/pg": "^8.11.0",
     "dotenv-cli": "^11.0.0",
-    "drizzle-kit": "^0.31.0",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0",
     "vitest": "^3.0.0"

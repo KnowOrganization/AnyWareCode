@@ -1,7 +1,7 @@
 import type { GuildMember, Message, ThreadChannel } from "discord.js";
 import { desc, eq } from "drizzle-orm";
-import { schema } from "../db/index.js";
-import type { Task } from "../db/schema.js";
+import { schema } from "@anywherecode/db";
+import type { Task } from "@anywherecode/db";
 import {
   classifyIntent,
   type ChatContext,
@@ -9,10 +9,16 @@ import {
   type IntentDecision,
 } from "../llm/chat.js";
 import { resolveLlmAuth } from "../llm/credentials.js";
-import { canInvoke, capState, ensureGuild } from "./gates.js";
+import { allowPlatformKey, canInvoke, capState, ensureGuild } from "./gates.js";
 import type { BotContext } from "./interactions.js";
-import { checkTaskPreconditions, launchTask, truncate } from "./launch.js";
+import {
+  checkTaskPreconditions,
+  launchTask,
+  trialEndedMessage,
+  truncate,
+} from "./launch.js";
 import { createProposal, proposalMessage } from "./proposals.js";
+import { captureError } from "../observability.js";
 
 /**
  * @mention participation. A direct mention anywhere classifies the
@@ -98,7 +104,7 @@ export async function handleMention(
   const guild = await ensureGuild(
     ctx.db,
     message.guildId,
-    ctx.config.DEFAULT_TASK_CAP,
+    ctx.config,
   );
   limiter ??= new ChatRateLimiter(ctx.config.CHAT_RATE_PER_MINUTE);
   if (!limiter.allow(message.guildId)) {
@@ -112,6 +118,11 @@ export async function handleMention(
       message,
       "I can't think yet — an admin needs to run `/connect llm` first.",
     );
+    return;
+  }
+  // Post-trial guilds can't ride the platform key, even for a chat reply.
+  if (llm.source === "platform" && !allowPlatformKey(guild)) {
+    await reply(message, trialEndedMessage(ctx));
     return;
   }
 
@@ -161,7 +172,7 @@ export async function handleMention(
       threadTask,
     });
   } catch (err) {
-    console.error("mention handling failed", err);
+    captureError(err, { msg: "mention handling failed", guildId: message.guildId });
     await reply(
       message,
       "⚠️ I had trouble processing that — try again in a moment.",
@@ -271,6 +282,7 @@ async function actOnDecision(
     member,
     mode,
     env.repoChannelId,
+    prompt,
   );
   if (!pre.ok) {
     await reply(message, pre.reason);

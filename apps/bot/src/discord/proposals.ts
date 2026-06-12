@@ -8,8 +8,8 @@ import {
   type MessageCreateOptions,
 } from "discord.js";
 import { and, eq, lt } from "drizzle-orm";
-import { schema, type Db } from "../db/index.js";
-import type { Proposal } from "../db/schema.js";
+import { schema, type Db } from "@anywherecode/db";
+import type { Proposal } from "@anywherecode/db";
 import { canInvoke, ensureGuild } from "./gates.js";
 import type { BotContext } from "./interactions.js";
 import { checkTaskPreconditions, launchTask, truncate } from "./launch.js";
@@ -105,7 +105,7 @@ export async function handleProposalButton(
   const guild = await ensureGuild(
     ctx.db,
     interaction.guildId,
-    ctx.config.DEFAULT_TASK_CAP,
+    ctx.config,
   );
   const isAuthor = interaction.user.id === proposal.authorId;
   const mayInvoke = Boolean(
@@ -146,6 +146,7 @@ export async function handleProposalButton(
     interaction.member,
     "code",
     proposal.channelId,
+    proposal.prompt,
   );
   if (!pre.ok) {
     await interaction.reply({

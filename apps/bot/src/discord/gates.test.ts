@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
-import type { Guild } from "../db/schema.js";
-import { capState, nextMonthStart } from "./gates.js";
+import type { Guild } from "@anywherecode/db";
+import {
+  allowPlatformKey,
+  capState,
+  nextMonthStart,
+  planSummary,
+} from "./gates.js";
 
 function guildRow(overrides: Partial<Guild> = {}): Guild {
   return {
@@ -12,6 +17,12 @@ function guildRow(overrides: Partial<Guild> = {}): Guild {
     asksUsedThisMonth: 0,
     capResetAt: new Date("2099-01-01T00:00:00Z"),
     createdAt: new Date(),
+    planId: null,
+    stripeCustomerId: null,
+    stripeSubscriptionId: null,
+    subStatus: "active",
+    trialEndsAt: null,
+    currentPeriodEnd: null,
     llmProviderType: null,
     llmCredentialEnc: null,
     llmBaseUrl: null,
@@ -47,6 +58,49 @@ describe("capState", () => {
     });
     const state = capState(guild, "code", new Date("2020-02-15T00:00:00Z"));
     expect(state).toMatchObject({ exceeded: false, used: 0, needsReset: true });
+  });
+});
+
+describe("allowPlatformKey", () => {
+  it("allows only while trialing", () => {
+    expect(allowPlatformKey(guildRow({ subStatus: "trialing" }))).toBe(true);
+    expect(allowPlatformKey(guildRow({ subStatus: "active" }))).toBe(false);
+    expect(allowPlatformKey(guildRow({ subStatus: "free" }))).toBe(false);
+    expect(allowPlatformKey(guildRow({ subStatus: "past_due" }))).toBe(false);
+  });
+});
+
+describe("planSummary", () => {
+  it("reports trial days left while trialing", () => {
+    const now = new Date("2026-06-11T00:00:00Z");
+    const s = planSummary(
+      guildRow({
+        subStatus: "trialing",
+        trialEndsAt: new Date("2026-06-16T00:00:00Z"),
+      }),
+      now,
+    );
+    expect(s.tier).toBe("Trial");
+    expect(s.trialDaysLeft).toBe(5);
+  });
+
+  it("labels active subscriptions as Pro with no trial counter", () => {
+    const s = planSummary(guildRow({ subStatus: "active", taskCap: 100 }));
+    expect(s.tier).toBe("Pro");
+    expect(s.codeCap).toBe(100);
+    expect(s.askCap).toBe(400);
+    expect(s.trialDaysLeft).toBeNull();
+  });
+
+  it("clamps an elapsed trial to zero days", () => {
+    const s = planSummary(
+      guildRow({
+        subStatus: "trialing",
+        trialEndsAt: new Date("2020-01-01T00:00:00Z"),
+      }),
+      new Date("2026-06-11T00:00:00Z"),
+    );
+    expect(s.trialDaysLeft).toBe(0);
   });
 });
 

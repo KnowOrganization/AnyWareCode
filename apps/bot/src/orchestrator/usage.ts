@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { schema, type Db } from "../db/index.js";
+import { schema, type Db } from "@anywherecode/db";
 
 export async function bumpUsage(
   db: Db,

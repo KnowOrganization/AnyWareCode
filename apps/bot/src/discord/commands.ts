@@ -36,6 +36,9 @@ export const commands = [
     .setName("setup")
     .setDescription("Show the connection status and usage for this server"),
   new SlashCommandBuilder()
+    .setName("billing")
+    .setDescription("Show this server's plan, usage, and upgrade link"),
+  new SlashCommandBuilder()
     .setName("repo")
     .setDescription("Manage the repo this channel works on")
     .addSubcommand((sub) =>

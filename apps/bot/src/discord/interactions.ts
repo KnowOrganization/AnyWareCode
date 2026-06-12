@@ -9,12 +9,13 @@ import {
 } from "discord.js";
 import { and, eq, inArray } from "drizzle-orm";
 import type { Config } from "../config.js";
-import { schema, type Db } from "../db/index.js";
+import { schema, type Db } from "@anywherecode/db";
 import type { GitHubService } from "../github/app.js";
 import { createInstallState } from "../github/install-state.js";
 import type { TaskOrchestrator } from "../orchestrator/taskRunner.js";
 import { canInvoke, capState, ensureGuild } from "./gates.js";
 import {
+  handleBillingCommand,
   handleConnectCommand,
   handleLlmButton,
   handleLlmModal,
@@ -23,6 +24,7 @@ import {
 import { checkTaskPreconditions, launchTask, truncate } from "./launch.js";
 import { handleProposalButton } from "./proposals.js";
 import { welcomeMessage } from "./welcome.js";
+import { captureError } from "../observability.js";
 
 export interface BotContext {
   db: Db;
@@ -46,7 +48,7 @@ export async function handleInteraction(
       await handleModal(ctx, interaction);
     }
   } catch (err) {
-    console.error("interaction failed", err);
+    captureError(err, { msg: "interaction failed" });
     if (
       (interaction.isChatInputCommand() ||
         interaction.isButton() ||
@@ -92,6 +94,8 @@ async function handleCommand(
       return handleConnectCommand(ctx, interaction);
     case "setup":
       return handleSetupCommand(ctx, interaction);
+    case "billing":
+      return handleBillingCommand(ctx, interaction);
   }
 }
 
@@ -105,7 +109,7 @@ async function startAgentTask(
     mode === "code" ? "task" : "question",
     true,
   );
-  const guild = await ensureGuild(ctx.db, guildId, ctx.config.DEFAULT_TASK_CAP);
+  const guild = await ensureGuild(ctx.db, guildId, ctx.config);
 
   const pre = await checkTaskPreconditions(
     ctx,
@@ -113,6 +117,7 @@ async function startAgentTask(
     interaction.member,
     mode,
     interaction.channelId,
+    prompt,
   );
   if (!pre.ok) {
     await interaction.reply({
@@ -206,7 +211,7 @@ async function handleRepo(
     return;
   }
 
-  const guild = await ensureGuild(ctx.db, guildId, ctx.config.DEFAULT_TASK_CAP);
+  const guild = await ensureGuild(ctx.db, guildId, ctx.config);
   if (!interaction.member || !canInvoke(guild, interaction.member)) {
     await interaction.reply({
       content: "You don't have permission to change this channel's repo.",
@@ -305,7 +310,7 @@ async function handleConfig(
     return;
   }
   const guildId = interaction.guildId!;
-  await ensureGuild(ctx.db, guildId, ctx.config.DEFAULT_TASK_CAP);
+  await ensureGuild(ctx.db, guildId, ctx.config);
   const role = interaction.options.getRole("role");
   await ctx.db
     .update(schema.guilds)
@@ -359,7 +364,7 @@ async function handleButton(
   const guild = await ensureGuild(
     ctx.db,
     interaction.guildId,
-    ctx.config.DEFAULT_TASK_CAP,
+    ctx.config,
   );
   if (!interaction.member || !canInvoke(guild, interaction.member)) {
     await interaction.reply({

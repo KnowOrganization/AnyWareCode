@@ -28,9 +28,10 @@ pnpm -r build                              # tsc to dist/ in each package
 pnpm --filter @anywherecode/bot test               # one package's suite
 pnpm --filter @anywherecode/bot test gates         # files matching "gates" (vitest pattern)
 
-# database (Drizzle + Postgres; migrations live in apps/bot/drizzle)
-pnpm --filter @anywherecode/bot db:generate        # after editing db/schema.ts
-pnpm --filter @anywherecode/bot db:migrate
+# database (Drizzle + Postgres; schema + migrations live in packages/db)
+pnpm --filter @anywherecode/db db:generate         # after editing packages/db/src/schema.ts
+pnpm --filter @anywherecode/db db:migrate
+pnpm --filter @anywherecode/db build               # rebuild after schema edits (dist-resolved, like @anywherecode/shared)
 
 pnpm --filter @anywherecode/bot register-commands  # push slash commands to Discord (also runs on bot boot)
 docker compose up -d                               # dev: postgres + egress proxy only
@@ -40,7 +41,7 @@ docker build -f apps/runner/Dockerfile -t anywherecode-runner .   # runner only 
 
 ## Architecture
 
-Three workspaces, **two processes**, one protocol:
+Five workspaces, **three processes**, one protocol:
 
 - `packages/shared` — the contract. `src/index.ts` defines the NDJSON protocol
   between bot and runner: `TaskSpec` (host→runner, first stdin line), `HostMessage`
@@ -48,10 +49,19 @@ Three workspaces, **two processes**, one protocol:
   line each). All zod-validated; non-JSON stdout lines are treated as runner debug
   and ignored. **This file is the seam between the two processes — changing it means
   rebuilding the runner image.**
-- `apps/bot` — the long-lived host. Owns Discord (discord.js), Postgres (Drizzle),
-  GitHub (octokit App), an HTTP server (fastify), and container lifecycles.
+- `packages/db` — the Drizzle schema, `createDb`, exported types, and the migrations
+  (`drizzle/`). Shared so both `apps/bot` and the future `apps/web` use one schema.
+  Dist-resolved like `packages/shared`: **rebuild it after editing `schema.ts`**.
+  `migrationsDir` is exported so the bot's boot migrate finds the folder.
+- `apps/bot` — the long-lived host. Owns Discord (discord.js), GitHub (octokit App),
+  an HTTP server (fastify), and container lifecycles. Reads/writes Postgres via
+  `@anywherecode/db`.
 - `apps/runner` — the per-task payload, baked into the `anywherecode-runner` Docker
   image. Clones the repo, wraps the Claude Agent SDK, commits/pushes, exits.
+- `apps/web` — the Next.js dashboard + marketing site (deploy: Vercel). Discord
+  OAuth (Auth.js), reads `@anywherecode/db` directly, and owns the **only Stripe
+  write surface** (`/api/stripe/webhook` → guild billing columns). The bot only
+  *reads* those columns. Checkout/portal in `/api/{checkout,portal}`.
 
 **Request flow** (`/code` → PR):
 1. `discord/interactions.ts` validates perms/cap/repo, opens a thread, calls
@@ -116,6 +126,14 @@ points on that path. Chat replies must keep `allowedMentions: { parse: [] }`
 - **Credentials at rest are AES-256-GCM** (`llm/credentials.ts`). Key derived via
   HKDF-SHA256 from `CREDENTIAL_SECRET`. AAD = guildId prevents cross-guild blob copy.
   Blob format: `v1.<iv>.<ct>.<tag>` (all base64url).
+- **Billing/plans (per-guild).** The effective monthly `/code` cap lives on
+  `guilds.taskCap` and is read by `capState` (unchanged). It's *maintained* by
+  `ensureGuild` for trial/free tiers (new guild → `trialing`, `trialEndsAt = now+TRIAL_DAYS`,
+  cap = `PLATFORM_TRIAL_TASK_CAP`; trial elapsed → `free`, cap = `FREE_TASK_CAP`) and
+  by the Stripe webhook (Phase 3, in `apps/web`) for paid tiers (`active`, cap = plan cap).
+  `ensureGuild` now takes `config`, not a bare cap. **Platform key is trial-only**:
+  `checkTaskPreconditions` and the mention handler reject `source === "platform"` once
+  `allowPlatformKey(guild)` is false (paid/free must BYO). `/billing` shows tier + usage.
 - **Boot sequence:** migrations (`drizzle-orm/node-postgres/migrator`) → command
   registration (global PUT, idempotent) → recovery sweep (stale tasks → failed + refund
   + thread notify) → orphan container kill → `client.login`.

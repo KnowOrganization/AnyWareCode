@@ -7,12 +7,13 @@ import {
 } from "discord.js";
 import { eq } from "drizzle-orm";
 import type { TranscriptEntry } from "@anywherecode/shared";
-import { schema } from "../db/index.js";
-import type { Guild } from "../db/schema.js";
+import { schema } from "@anywherecode/db";
+import type { Guild } from "@anywherecode/db";
 import { createInstallState } from "../github/install-state.js";
 import { resolveLlmAuth } from "../llm/credentials.js";
+import { captureError } from "../observability.js";
 import { bumpUsage } from "../orchestrator/usage.js";
-import { canInvoke, capState } from "./gates.js";
+import { allowPlatformKey, canInvoke, capState } from "./gates.js";
 import type { BotContext } from "./interactions.js";
 
 /**
@@ -31,9 +32,19 @@ export async function checkTaskPreconditions(
   member: GuildMember | APIInteractionGuildMember | null,
   mode: "code" | "ask",
   repoChannelId: string,
+  prompt: string,
 ): Promise<PreconditionResult> {
   if (!member) {
     return { ok: false, reason: "Couldn't resolve your server membership; try again." };
+  }
+  if (prompt.trim().length === 0) {
+    return { ok: false, reason: "Give me something to work on — the task is empty." };
+  }
+  if (prompt.length > ctx.config.MAX_PROMPT_CHARS) {
+    return {
+      ok: false,
+      reason: `That's too long (${prompt.length} chars; max ${ctx.config.MAX_PROMPT_CHARS}). Trim it and try again.`,
+    };
   }
   if (!canInvoke(guild, member)) {
     return {
@@ -57,6 +68,10 @@ export async function checkTaskPreconditions(
   const llmRes = await resolveLlmAuth(ctx.db, ctx.config, guild.id);
   if (!llmRes.auth) {
     return { ok: false, reason: "LLM not connected. An admin needs to run `/connect llm`." };
+  }
+  // The platform key is a trial convenience only; paid + post-trial tiers must BYO.
+  if (llmRes.source === "platform" && !allowPlatformKey(guild)) {
+    return { ok: false, reason: trialEndedMessage(ctx) };
   }
   const channelRepo = await ctx.db.query.channelRepos.findFirst({
     where: eq(schema.channelRepos.channelId, repoChannelId),
@@ -141,7 +156,7 @@ export async function launchTask(
       ...(req.iterate ? { iterate: req.iterate } : {}),
     })
     .catch(async (err: unknown) => {
-      console.error(`task in thread ${thread.id} failed`, err);
+      captureError(err, { msg: "task crashed", threadId: thread.id });
       await thread
         .send("⚠️ The task crashed before finishing. Check the bot logs.")
         .catch(() => {});
@@ -151,4 +166,10 @@ export async function launchTask(
 
 export function truncate(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
+
+/** Shown when a guild past its trial tries to ride the platform key. */
+export function trialEndedMessage(ctx: BotContext): string {
+  const plans = ctx.config.WEB_URL ? ` and pick a plan at ${ctx.config.WEB_URL}` : "";
+  return `Your free trial has ended. Connect your own LLM key with \`/connect llm\`${plans} to keep going.`;
 }

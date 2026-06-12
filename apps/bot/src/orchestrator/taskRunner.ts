@@ -13,9 +13,10 @@ import {
   type TranscriptEntry,
 } from "@anywherecode/shared";
 import type { Config } from "../config.js";
-import { schema, type Db } from "../db/index.js";
+import { schema, type Db } from "@anywherecode/db";
 import type { GitHubService } from "../github/app.js";
 import { isAuthError, resolveLlmAuth } from "../llm/credentials.js";
+import { log } from "../observability.js";
 import { GuildTaskLimiter } from "./limiter.js";
 import { ProgressRenderer, ThrottledUpdater } from "./renderer.js";
 import { refundUsage } from "./usage.js";
@@ -255,7 +256,7 @@ export class TaskOrchestrator {
           "⚠️ LLM credential looks invalid or revoked. Admin: run `/connect llm` to reconnect.",
         );
       } else if (isAuthError(errorMessage) && task.llmSource === "platform") {
-        console.error(`[operator] LLM auth error on platform key: ${errorMessage}`);
+        log.error(`[operator] LLM auth error on platform key: ${errorMessage}`);
         await thread.send(
           "⚠️ LLM authentication failed. Contact the bot operator.",
         );
