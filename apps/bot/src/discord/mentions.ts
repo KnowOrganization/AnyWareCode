@@ -283,7 +283,7 @@ async function actOnDecision(
     env.guild,
     member,
     mode,
-    env.repoChannelId,
+    { channelId: env.repoChannelId },
     prompt,
   );
   if (!pre.ok) {

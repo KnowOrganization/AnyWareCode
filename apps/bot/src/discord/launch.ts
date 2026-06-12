@@ -29,17 +29,43 @@ export type PreconditionResult =
   | { ok: true; repoFullName: string; installationId: number }
   | { ok: false; reason: string };
 
+/** Where the task's repo comes from: a bound channel, or directly (webhook
+ * features like the issue feed name the repo without a channel binding). */
+export type RepoRef = { channelId: string } | { repoFullName: string };
+
 export async function checkTaskPreconditions(
   ctx: BotContext,
   guild: Guild,
   member: GuildMember | APIInteractionGuildMember | null,
   mode: "code" | "ask",
-  repoChannelId: string,
+  repoRef: RepoRef,
   prompt: string,
 ): Promise<PreconditionResult> {
   if (!member) {
     return { ok: false, reason: "Couldn't resolve your server membership; try again." };
   }
+  if (!canInvoke(guild, member)) {
+    return {
+      ok: false,
+      reason:
+        "You don't have permission to run agent tasks here. Ask an admin to grant your role with `/config role`.",
+    };
+  }
+  return checkSystemTaskPreconditions(ctx, guild, mode, repoRef, prompt);
+}
+
+/**
+ * Everything except the member check — system-initiated launches (auto-review)
+ * have no clicking member. Human entry points go through
+ * checkTaskPreconditions, which adds the membership/permission gate.
+ */
+export async function checkSystemTaskPreconditions(
+  ctx: BotContext,
+  guild: Guild,
+  mode: "code" | "ask",
+  repoRef: RepoRef,
+  prompt: string,
+): Promise<PreconditionResult> {
   if (guild.suspended) {
     return {
       ok: false,
@@ -53,13 +79,6 @@ export async function checkTaskPreconditions(
     return {
       ok: false,
       reason: `That's too long (${prompt.length} chars; max ${ctx.config.MAX_PROMPT_CHARS}). Trim it and try again.`,
-    };
-  }
-  if (!canInvoke(guild, member)) {
-    return {
-      ok: false,
-      reason:
-        "You don't have permission to run agent tasks here. Ask an admin to grant your role with `/config role`.",
     };
   }
   if (!guild.githubInstallationId) {
@@ -80,26 +99,30 @@ export async function checkTaskPreconditions(
   }
   const usable = await assertLlmUsable(ctx, guild, llmRes);
   if (!usable.ok) return usable;
-  const channelRepo = await ctx.db.query.channelRepos.findFirst({
-    where: eq(schema.channelRepos.channelId, repoChannelId),
-  });
-  if (!channelRepo) {
-    return {
-      ok: false,
-      reason: "No repo set for this channel yet — run `/repo set` first.",
-    };
+
+  let repoFullName: string;
+  if ("repoFullName" in repoRef) {
+    repoFullName = repoRef.repoFullName;
+  } else {
+    const channelRepo = await ctx.db.query.channelRepos.findFirst({
+      where: eq(schema.channelRepos.channelId, repoRef.channelId),
+    });
+    if (!channelRepo) {
+      return {
+        ok: false,
+        reason: "No repo set for this channel yet — run `/repo set` first.",
+      };
+    }
+    repoFullName = channelRepo.repoFullName;
   }
   // OSS tier is for public repos only; recheck lazily in case one went private.
   if (
     resolveTier(guild).kind === "oss" &&
-    (await ctx.github.repoIsPrivate(
-      guild.githubInstallationId,
-      channelRepo.repoFullName,
-    ))
+    (await ctx.github.repoIsPrivate(guild.githubInstallationId, repoFullName))
   ) {
     return {
       ok: false,
-      reason: `\`${channelRepo.repoFullName}\` is private — the OSS Community tier only runs on public repos.`,
+      reason: `\`${repoFullName}\` is private — the OSS Community tier only runs on public repos.`,
     };
   }
   const cap = capState(guild, mode);
@@ -108,7 +131,7 @@ export async function checkTaskPreconditions(
   }
   return {
     ok: true,
-    repoFullName: channelRepo.repoFullName,
+    repoFullName,
     installationId: guild.githubInstallationId,
   };
 }
@@ -190,6 +213,10 @@ export interface LaunchTaskRequest {
   requestedBy: string;
   thread: ThreadStrategy;
   iterate?: { branch: string; prNumber: number; transcript: TranscriptEntry[] };
+  /** Ask mode only: clone this ref instead of the default branch (PR review). */
+  checkoutRef?: string;
+  /** Ask mode only: also post the final summary as an embed to this channel. */
+  summaryTarget?: { channelId: string; title: string };
 }
 
 export async function launchTask(
@@ -227,6 +254,8 @@ export async function launchTask(
       mode: req.mode,
       fundedBy,
       ...(req.iterate ? { iterate: req.iterate } : {}),
+      ...(req.checkoutRef ? { checkoutRef: req.checkoutRef } : {}),
+      ...(req.summaryTarget ? { summaryTarget: req.summaryTarget } : {}),
     })
     .catch(async (err: unknown) => {
       captureError(err, { msg: "task crashed", threadId: thread.id });

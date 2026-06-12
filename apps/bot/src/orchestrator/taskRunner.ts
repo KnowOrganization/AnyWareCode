@@ -40,6 +40,10 @@ export interface StartTaskParams {
     prNumber: number;
     transcript: TranscriptEntry[];
   };
+  /** Ask mode only: clone this ref instead of the default branch (PR review). */
+  checkoutRef?: string;
+  /** Ask mode only: also post the final summary as an embed to this channel. */
+  summaryTarget?: { channelId: string; title: string };
 }
 
 type TerminalReason = "cancel" | "timeout";
@@ -191,7 +195,12 @@ export class TaskOrchestrator {
       taskId,
       repo: params.repoFullName,
       branch,
-      baseBranch,
+      // Ask mode can review any ref (e.g. a PR head): the runner clones
+      // baseBranch and ask mode never pushes, so overriding it is safe.
+      baseBranch:
+        params.mode === "ask" && params.checkoutRef
+          ? params.checkoutRef
+          : baseBranch,
       prompt: params.prompt,
       mode: params.mode,
       transcript: params.iterate?.transcript ?? [],
@@ -320,6 +329,28 @@ export class TaskOrchestrator {
 
     if (params.mode === "ask") {
       await this.settle(task, "done");
+      // Review-style asks mirror their summary to a channel (never pings).
+      if (params.summaryTarget && summary) {
+        const channel = await thread.client.channels
+          .fetch(params.summaryTarget.channelId)
+          .catch(() => null);
+        if (channel?.isSendable()) {
+          await channel
+            .send({
+              embeds: [
+                new EmbedBuilder()
+                  .setColor(0x5865f2)
+                  .setTitle(params.summaryTarget.title.slice(0, 250))
+                  .setDescription(summary.slice(0, 4000))
+                  .setFooter({ text: `Details in the thread` }),
+              ],
+              allowedMentions: { parse: [] },
+            })
+            .catch((err) =>
+              log.warn({ err }, "summary target post failed"),
+            );
+        }
+      }
       return;
     }
 
@@ -351,12 +382,7 @@ export class TaskOrchestrator {
       prUrl = pr.url;
     }
 
-    await this.db
-      .update(schema.tasks)
-      .set({ status: "done", prNumber, finishedAt: new Date() })
-      .where(eq(schema.tasks.id, taskId));
-
-    await thread.send({
+    const prCard = await thread.send({
       embeds: [
         new EmbedBuilder()
           .setColor(0x57f287)
@@ -381,6 +407,16 @@ export class TaskOrchestrator {
         ),
       ],
     });
+
+    await this.db
+      .update(schema.tasks)
+      .set({
+        status: "done",
+        prNumber,
+        prMessageId: prCard.id,
+        finishedAt: new Date(),
+      })
+      .where(eq(schema.tasks.id, taskId));
 
     if (diffFiles.length > 0) {
       await thread

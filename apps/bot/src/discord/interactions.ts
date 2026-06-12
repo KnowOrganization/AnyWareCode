@@ -126,7 +126,7 @@ async function startAgentTask(
     guild,
     interaction.member,
     mode,
-    interaction.channelId,
+    { channelId: interaction.channelId },
     prompt,
   );
   if (!pre.ok) {

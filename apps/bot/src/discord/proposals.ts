@@ -145,7 +145,9 @@ export async function handleProposalButton(
     guild,
     interaction.member,
     "code",
-    proposal.channelId,
+    // Proposals carry their repo — webhook-fed ones may live in a channel
+    // without a binding (e.g. a #triage feed serving many repos).
+    { repoFullName: proposal.repoFullName },
     proposal.prompt,
   );
   if (!pre.ok) {
