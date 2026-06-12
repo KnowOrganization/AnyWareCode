@@ -59,14 +59,14 @@ export default async function Dashboard() {
             <span className="text-gradient">manage</span>
           </h1>
           <p className="text-muted">
-            Servers where you have Manage Server permission and AnywhereCode is
+            Servers where you have Manage Server permission and AnyWareCode is
             installed.
           </p>
         </div>
 
         {withBot.length === 0 ? (
           <GlassCard className="mt-8 p-6 text-muted">
-            No servers with AnywhereCode yet. Add it to one below.
+            No servers with AnyWareCode yet. Add it to one below.
           </GlassCard>
         ) : (
           <ul className="mt-8 flex flex-col gap-3">

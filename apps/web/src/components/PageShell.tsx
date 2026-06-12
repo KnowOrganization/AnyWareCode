@@ -3,14 +3,17 @@ import Link from "next/link";
 import { AuroraBackground } from "@/components/ui/AuroraBackground";
 import { Container } from "@/components/ui/Container";
 import { Button } from "@/components/ui/Button";
+import { LogoMark } from "@/components/ui/Logo";
 import { INSTALL_URL } from "@/lib/site";
 
 /** Wordmark used across the app shell + footer. */
 export function Wordmark() {
   return (
     <Link href="/" className="flex items-center gap-2.5 font-display font-semibold">
-      <span className="h-6 w-6 rounded-lg bg-gradient-to-br from-indigo via-violet to-cyan shadow-[0_0_18px_-2px_rgba(139,92,246,0.8)]" />
-      <span className="tracking-tight">AnywhereCode</span>
+      <LogoMark className="h-6 w-auto" />
+      <span className="tracking-tight">
+        AnyWare<span className="text-primary">Code</span>
+      </span>
     </Link>
   );
 }

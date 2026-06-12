@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
-import { Inter, Space_Grotesk, JetBrains_Mono } from "next/font/google";
+import { Inter, Hanken_Grotesk, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 
 const inter = Inter({
@@ -8,9 +8,10 @@ const inter = Inter({
   variable: "--font-inter",
   display: "swap",
 });
-const display = Space_Grotesk({
+const display = Hanken_Grotesk({
   subsets: ["latin"],
   variable: "--font-display",
+  weight: ["500", "600", "700", "800"],
   display: "swap",
 });
 const mono = JetBrains_Mono({
@@ -19,38 +20,42 @@ const mono = JetBrains_Mono({
   display: "swap",
 });
 
-const TITLE = "AnywhereCode — Ship code from your Discord server";
+const TITLE = "AnyWareCode — The accountable Discord-native coding agent";
 const DESCRIPTION =
-  "One shared AI engineer for your whole Discord community — and it signs its work. Every PR carries a named human sponsor and a provenance receipt; Repro Gate filters slop bug reports before they cost a human minute.";
+  "Belongs to the server, not a seat. AnyWareCode ships code in public threads, signs its work, and waits for humans to merge. Every PR carries a named human sponsor and a provenance receipt; Repro Gate filters slop before it costs a human minute.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(
     process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3001",
   ),
-  title: { default: TITLE, template: "%s · AnywhereCode" },
+  title: { default: TITLE, template: "%s · AnyWareCode" },
   description: DESCRIPTION,
   keywords: [
     "Discord coding agent",
     "AI pull requests",
     "GitHub bot",
     "Claude agent",
-    "AnywhereCode",
+    "provenance receipt",
+    "AnyWareCode",
   ],
+  icons: { icon: "/icon.svg" },
   openGraph: {
     title: TITLE,
     description: DESCRIPTION,
     type: "website",
-    siteName: "AnywhereCode",
+    siteName: "AnyWareCode",
+    images: [{ url: "/brand/anywarecode-lockup.png", width: 1938, height: 760 }],
   },
   twitter: {
     card: "summary_large_image",
     title: TITLE,
     description: DESCRIPTION,
+    images: ["/brand/anywarecode-lockup.png"],
   },
 };
 
 export const viewport: Viewport = {
-  themeColor: "#06060d",
+  themeColor: "#07090a",
   colorScheme: "dark",
 };
 

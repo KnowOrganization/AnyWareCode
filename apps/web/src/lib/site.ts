@@ -289,7 +289,7 @@ export const faqs: Faq[] = [
   },
   {
     q: "What's an AGENTS.md and why do you care?",
-    a: "The open per-repo conventions standard read by 20+ coding tools. AnywhereCode reads yours on every run, and /memory commit flows your server's accumulated conventions back into it via PR — your context improves every agent you use, not just ours.",
+    a: "The open per-repo conventions standard read by 20+ coding tools. AnyWareCode reads yours on every run, and /memory commit flows your server's accumulated conventions back into it via PR — your context improves every agent you use, not just ours.",
   },
 ];
 

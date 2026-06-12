@@ -53,7 +53,7 @@ export default async function GuildPage({
       <PageShell>
         <Container className="max-w-2xl">
           <GlassCard className="p-6">
-            <p>AnywhereCode isn&apos;t installed on that server yet.</p>
+            <p>AnyWareCode isn&apos;t installed on that server yet.</p>
             <Link href="/dashboard" className="mt-3 inline-block text-violet hover:text-fg">
               ← Back to servers
             </Link>

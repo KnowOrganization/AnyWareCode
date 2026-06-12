@@ -40,7 +40,7 @@ export default async function PackPage({
             <p>
               {guild
                 ? "You need to be a member of that server to power it."
-                : "AnywhereCode isn't installed on that server yet."}
+                : "AnyWareCode isn't installed on that server yet."}
             </p>
             <Link href="/" className="mt-3 inline-block text-violet hover:text-fg">
               ← Home

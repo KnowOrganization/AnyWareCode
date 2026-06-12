@@ -1,36 +1,38 @@
-import { AuroraBackground } from "@/components/ui/AuroraBackground";
 import { SmoothScroll } from "@/components/fx/SmoothScroll";
-import { ScrollProgress } from "@/components/fx/ScrollProgress";
-import { ScrollScene } from "@/components/three/ScrollScene";
-import { Nav } from "@/components/sections/Nav";
-import { Hero } from "@/components/sections/Hero";
-import { LogoCloud } from "@/components/sections/LogoCloud";
-import { Features } from "@/components/sections/Features";
-import { HowItWorks } from "@/components/sections/HowItWorks";
-import { Security } from "@/components/sections/Security";
-import { Pricing } from "@/components/sections/Pricing";
-import { Faq } from "@/components/sections/Faq";
-import { CtaBand } from "@/components/sections/CtaBand";
-import { Footer } from "@/components/sections/Footer";
+import { LedgerRails } from "@/components/landing/LedgerRails";
+import { ChapterIndex } from "@/components/landing/ChapterIndex";
+import { LandingNav } from "@/components/landing/LandingNav";
+import { Hero } from "@/components/landing/Hero";
+import { Ticker } from "@/components/landing/Ticker";
+import { Entries } from "@/components/landing/Entries";
+import { Custody } from "@/components/landing/Custody";
+import { ThreatModel } from "@/components/landing/ThreatModel";
+import { Receipts } from "@/components/landing/Receipts";
+import { Faq } from "@/components/landing/Faq";
+import { SignOff } from "@/components/landing/SignOff";
+import { Footer } from "@/components/landing/Footer";
 
+/**
+ * Landing v4 — "The Ledger". The page reads as a signed shipping manifest:
+ * numbered chapters, hairline rules, perforated receipts, one teal signature
+ * accent and amber reserved for provenance stamps.
+ */
 export default function Home() {
   return (
     <>
       <SmoothScroll />
-      <ScrollProgress />
-      <AuroraBackground />
-      {/* Fixed WebGL layer: the repo→PR node graph the scroll flies through */}
-      <ScrollScene />
-      <Nav />
-      <main className="relative overflow-x-clip">
+      <LedgerRails />
+      <ChapterIndex />
+      <LandingNav />
+      <main className="relative z-10 overflow-x-clip">
         <Hero />
-        <LogoCloud />
-        <Features />
-        <HowItWorks />
-        <Security />
-        <Pricing />
+        <Ticker />
+        <Entries />
+        <Custody />
+        <ThreatModel />
+        <Receipts />
         <Faq />
-        <CtaBand />
+        <SignOff />
       </main>
       <Footer />
     </>
