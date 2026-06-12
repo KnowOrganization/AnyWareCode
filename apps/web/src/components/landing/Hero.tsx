@@ -1,6 +1,8 @@
 import { Container } from "@/components/ui/Container";
 import { Reveal } from "@/components/Reveal";
 import { Magnetic } from "@/components/fx/Magnetic";
+import { MaskRise } from "./fx/MaskRise";
+import { Parallax } from "./fx/Parallax";
 import { Cta } from "./Cta";
 import { ReceiptCard } from "./ReceiptCard";
 import * as site from "@/lib/site";
@@ -24,18 +26,28 @@ export function Hero() {
         </Reveal>
 
         <div className="grid items-end gap-12 pb-20 pt-12 sm:pt-16 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)] lg:gap-16 lg:pb-28">
-          <div>
-            <Reveal stagger>
+          <Parallax speed={0.3}>
+            <MaskRise>
               <h1 className="font-display text-[clamp(2.9rem,9.5vw,6.8rem)] font-bold uppercase leading-[0.92] tracking-tight">
-                <span className="block">Ship code</span>
-                <span className="block">
-                  from <span className="text-outline">Discord.</span>
+                <span className="block overflow-hidden">
+                  <span data-line className="block">
+                    Ship code
+                  </span>
                 </span>
-                <span className="block text-primary">
-                  Signed<span className="text-amber">*</span>
+                <span className="block overflow-hidden">
+                  <span data-line className="block">
+                    from <span className="text-outline">Discord.</span>
+                  </span>
+                </span>
+                <span className="block overflow-hidden">
+                  <span data-line className="block text-primary">
+                    Signed<span className="text-amber">*</span>
+                  </span>
                 </span>
               </h1>
+            </MaskRise>
 
+            <Reveal stagger delay={0.35}>
               <p className="mt-7 max-w-xl text-base text-muted sm:text-lg">
                 One shared AI engineer for your whole server. Type{" "}
                 <code className="rounded-md border border-line-strong bg-surface px-1.5 py-0.5 font-mono text-[0.9em] text-primary">
@@ -66,11 +78,13 @@ export function Hero() {
                 main
               </p>
             </Reveal>
-          </div>
+          </Parallax>
 
-          <Reveal delay={0.2} y={36} className="lg:pb-2">
-            <ReceiptCard />
-          </Reveal>
+          <Parallax speed={0.12} className="lg:pb-2">
+            <Reveal delay={0.2} y={36}>
+              <ReceiptCard />
+            </Reveal>
+          </Parallax>
         </div>
       </Container>
     </section>

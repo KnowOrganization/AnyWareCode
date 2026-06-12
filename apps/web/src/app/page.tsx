@@ -1,4 +1,5 @@
 import { SmoothScroll } from "@/components/fx/SmoothScroll";
+import { ProgressRule } from "@/components/landing/fx/ProgressRule";
 import { LedgerRails } from "@/components/landing/LedgerRails";
 import { ChapterIndex } from "@/components/landing/ChapterIndex";
 import { LandingNav } from "@/components/landing/LandingNav";
@@ -21,6 +22,7 @@ export default function Home() {
   return (
     <>
       <SmoothScroll />
+      <ProgressRule />
       <LedgerRails />
       <ChapterIndex />
       <LandingNav />

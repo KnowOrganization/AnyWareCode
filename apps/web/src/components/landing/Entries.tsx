@@ -1,5 +1,6 @@
 import { Container } from "@/components/ui/Container";
 import { Reveal } from "@/components/Reveal";
+import { BatchReveal } from "./fx/BatchReveal";
 import { LedgerHeading } from "./LedgerHeading";
 import * as site from "@/lib/site";
 
@@ -22,7 +23,7 @@ export function Entries() {
           blurb="Every capability is an entry in the server's ledger — invoked in public channels, executed in isolation, accounted for in the receipt."
         />
 
-        <Reveal stagger className="mt-14">
+        <BatchReveal className="mt-14">
           {site.features.map((f, i) => (
             <article
               key={f.title}
@@ -42,7 +43,7 @@ export function Entries() {
               </p>
             </article>
           ))}
-        </Reveal>
+        </BatchReveal>
 
         <Reveal>
           <p className="label-mono mt-6 text-right text-faint">

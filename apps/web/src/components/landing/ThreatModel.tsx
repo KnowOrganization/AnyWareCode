@@ -1,5 +1,6 @@
 import { Container } from "@/components/ui/Container";
 import { Reveal } from "@/components/Reveal";
+import { BatchReveal } from "./fx/BatchReveal";
 import { LedgerHeading } from "./LedgerHeading";
 import * as site from "@/lib/site";
 
@@ -25,7 +26,7 @@ export function ThreatModel() {
           blurb="Repo content, inbound issues, and chat history are all untrusted by default. The sandbox is the trust boundary — not the model's judgment."
         />
 
-        <Reveal stagger className="mt-14 grid gap-x-12 sm:grid-cols-2">
+        <BatchReveal className="mt-14 grid gap-x-12 sm:grid-cols-2">
           {site.securityPoints.map((p, i) => (
             <div
               key={p.title}
@@ -44,7 +45,7 @@ export function ThreatModel() {
               </div>
             </div>
           ))}
-        </Reveal>
+        </BatchReveal>
 
         <Reveal>
           <div className="mt-12 flex flex-col items-start justify-between gap-6 sm:flex-row sm:items-center">

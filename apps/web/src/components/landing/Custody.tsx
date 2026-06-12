@@ -1,5 +1,5 @@
 import { Container } from "@/components/ui/Container";
-import { Reveal } from "@/components/Reveal";
+import { CustodyFx } from "./fx/CustodyFx";
 import { LedgerHeading } from "./LedgerHeading";
 import * as site from "@/lib/site";
 
@@ -23,7 +23,7 @@ export function Custody() {
           blurb="From prompt to pull request in four hand-offs — each one visible in the thread, none of them touching your default branch."
         />
 
-        <Reveal stagger className="relative mt-16 grid gap-10 lg:grid-cols-4 lg:gap-0">
+        <CustodyFx className="relative mt-16 grid gap-10 lg:grid-cols-4 lg:gap-0">
           {site.steps.map((s, i) => (
             <div key={s.n} className="relative pl-8 lg:px-6 lg:pt-10">
               {/* connector: vertical on mobile, horizontal on lg */}
@@ -31,7 +31,14 @@ export function Custody() {
                 aria-hidden
                 className="absolute left-[5px] top-2 h-full w-px bg-line lg:left-0 lg:top-0 lg:h-px lg:w-full"
               />
+              {/* teal fill drawn over the rule as the chapter scrolls */}
               <span
+                data-fill
+                aria-hidden
+                className="absolute left-[5px] top-2 h-full w-px scale-0 bg-primary/60 lg:left-0 lg:top-0 lg:h-px lg:w-full"
+              />
+              <span
+                data-dot
                 aria-hidden
                 className={`absolute left-0 top-1 size-[11px] rounded-full border-2 lg:-top-[5px] lg:left-6 ${
                   i === last
@@ -60,7 +67,7 @@ export function Custody() {
               ) : null}
             </div>
           ))}
-        </Reveal>
+        </CustodyFx>
       </Container>
     </section>
   );

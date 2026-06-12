@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Reveal } from "@/components/Reveal";
+import { DrawLine } from "./fx/DrawLine";
 
 /**
  * Standard chapter opener: mono folio line, hairline, oversized display
@@ -26,7 +27,7 @@ export function LedgerHeading({
           ANYWARECODE — LEDGER
         </span>
       </div>
-      <div className="mt-4 h-px bg-line" />
+      <DrawLine className="mt-4" />
       <h2 className="mt-8 font-display text-4xl font-bold uppercase leading-[0.98] tracking-tight sm:text-5xl lg:text-6xl">
         {title}
       </h2>

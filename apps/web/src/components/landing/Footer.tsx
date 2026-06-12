@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Container } from "@/components/ui/Container";
+import { Parallax } from "./fx/Parallax";
 import * as site from "@/lib/site";
 
 /**
@@ -51,12 +52,14 @@ export function Footer() {
           ))}
         </div>
 
-        <p
-          aria-hidden
-          className="text-outline select-none whitespace-nowrap text-center font-display text-[clamp(3rem,11.5vw,9.5rem)] font-bold uppercase leading-none tracking-tight"
-        >
-          AnyWareCode
-        </p>
+        <Parallax axis="x" speed={0.7}>
+          <p
+            aria-hidden
+            className="text-outline select-none whitespace-nowrap text-center font-display text-[clamp(3rem,11.5vw,9.5rem)] font-bold uppercase leading-none tracking-tight"
+          >
+            AnyWareCode
+          </p>
+        </Parallax>
 
         <div className="label-mono flex flex-col items-start justify-between gap-2 border-t border-line py-6 text-faint sm:flex-row sm:items-center">
           <span>© {new Date().getFullYear()} ANYWARECODE — LEDGER CLOSED</span>
