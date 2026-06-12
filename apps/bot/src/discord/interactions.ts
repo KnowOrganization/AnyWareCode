@@ -29,6 +29,7 @@ import { handleMemoryCommand, handleMemoryModal } from "./memory.js";
 import { handleMemorySuggestionButton } from "./memorySuggestions.js";
 import { handleOssCommand } from "./oss.js";
 import { handleProposalButton } from "./proposals.js";
+import { handleReviewCommand } from "./review.js";
 import { postShipLog } from "./shiplog.js";
 import { welcomeMessage } from "./welcome.js";
 import { captureError } from "../observability.js";
@@ -109,6 +110,8 @@ async function handleCommand(
       return handleOssCommand(ctx, interaction);
     case "memory":
       return handleMemoryCommand(ctx, interaction);
+    case "review":
+      return handleReviewCommand(ctx, interaction);
   }
 }
 
@@ -343,6 +346,41 @@ async function handleConfig(
 
   if (sub === "issues") {
     await handleConfigIssues(ctx, interaction);
+    return;
+  }
+
+  if (sub === "review") {
+    const repoFullName = interaction.options.getString("repo", true);
+    const channel = interaction.options.getChannel("channel");
+    if (channel) {
+      const resolved = await interaction.client.channels
+        .fetch(channel.id)
+        .catch(() => null);
+      if (!resolved?.isSendable()) {
+        await interaction.reply({
+          content: "I can't send messages in that channel — pick one where I have Send Messages.",
+          flags: MessageFlags.Ephemeral,
+        });
+        return;
+      }
+    }
+    await ctx.db
+      .insert(schema.repoSettings)
+      .values({
+        guildId,
+        repoFullName,
+        autoReview: Boolean(channel),
+        reviewChannelId: channel?.id ?? null,
+      })
+      .onConflictDoUpdate({
+        target: [schema.repoSettings.guildId, schema.repoSettings.repoFullName],
+        set: { autoReview: Boolean(channel), reviewChannelId: channel?.id ?? null },
+      });
+    await interaction.reply(
+      channel
+        ? `🔎 Every opened PR on \`${repoFullName}\` will be auto-reviewed into <#${channel.id}> (counts against the /ask quota).`
+        : `✅ Auto-review for \`${repoFullName}\` turned off.`,
+    );
     return;
   }
 

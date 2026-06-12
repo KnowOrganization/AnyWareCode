@@ -71,7 +71,7 @@ const client = new Client({
   partials: [Partials.Channel],
 });
 const ctx: BotContext = { db, config, github, orchestrator, client };
-registerWebhookHandlers({ db, config, github, client });
+registerWebhookHandlers(ctx);
 
 client.on(Events.ClientReady, async (ready) => {
   log.info(`Logged in as ${ready.user.tag}`);

@@ -213,6 +213,8 @@ export interface LaunchTaskRequest {
   requestedBy: string;
   thread: ThreadStrategy;
   iterate?: { branch: string; prNumber: number; transcript: TranscriptEntry[] };
+  /** Extra context injected as prior conversation (e.g. a PR diff for review). */
+  transcript?: TranscriptEntry[];
   /** Ask mode only: clone this ref instead of the default branch (PR review). */
   checkoutRef?: string;
   /** Ask mode only: also post the final summary as an embed to this channel. */
@@ -254,6 +256,7 @@ export async function launchTask(
       mode: req.mode,
       fundedBy,
       ...(req.iterate ? { iterate: req.iterate } : {}),
+      ...(req.transcript ? { transcript: req.transcript } : {}),
       ...(req.checkoutRef ? { checkoutRef: req.checkoutRef } : {}),
       ...(req.summaryTarget ? { summaryTarget: req.summaryTarget } : {}),
     })

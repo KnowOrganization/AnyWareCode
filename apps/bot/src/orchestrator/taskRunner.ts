@@ -41,6 +41,8 @@ export interface StartTaskParams {
     prNumber: number;
     transcript: TranscriptEntry[];
   };
+  /** Extra context injected as prior conversation (e.g. a PR diff for review). */
+  transcript?: TranscriptEntry[];
   /** Ask mode only: clone this ref instead of the default branch (PR review). */
   checkoutRef?: string;
   /** Ask mode only: also post the final summary as an embed to this channel. */
@@ -204,7 +206,7 @@ export class TaskOrchestrator {
           : baseBranch,
       prompt: params.prompt,
       mode: params.mode,
-      transcript: params.iterate?.transcript ?? [],
+      transcript: params.transcript ?? params.iterate?.transcript ?? [],
       resumeBranch: Boolean(params.iterate),
       githubToken: token,
       llmAuth: resolved.auth,

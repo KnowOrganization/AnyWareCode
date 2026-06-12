@@ -145,6 +145,53 @@ export class GitHubService {
     });
   }
 
+  /** Everything the review agent needs about a PR, including its diff. */
+  async pullRequestForReview(
+    installationId: number,
+    repoFullName: string,
+    prNumber: number,
+  ): Promise<{
+    title: string;
+    body: string;
+    author: string;
+    headRef: string;
+    baseRef: string;
+    isFork: boolean;
+    isDraft: boolean;
+    isOpen: boolean;
+    diff: string;
+  }> {
+    const [owner, repo] = splitRepo(repoFullName);
+    const client = await this.installationClient(installationId);
+    const [{ data: pr }, diffRes] = await Promise.all([
+      client.rest.pulls.get({ owner, repo, pull_number: prNumber }),
+      client.rest.pulls.get({
+        owner,
+        repo,
+        pull_number: prNumber,
+        mediaType: { format: "diff" },
+      }),
+    ]);
+    // With format=diff the payload is the raw diff string.
+    const rawDiff = diffRes.data as unknown as string;
+    const MAX_DIFF = 50_000;
+    const diff =
+      rawDiff.length > MAX_DIFF
+        ? `${rawDiff.slice(0, MAX_DIFF)}\n…(diff truncated at ${MAX_DIFF} chars)`
+        : rawDiff;
+    return {
+      title: pr.title,
+      body: pr.body ?? "",
+      author: pr.user?.login ?? "unknown",
+      headRef: pr.head.ref,
+      baseRef: pr.base.ref,
+      isFork: pr.head.repo?.full_name !== repoFullName,
+      isDraft: Boolean(pr.draft),
+      isOpen: pr.state === "open",
+      diff,
+    };
+  }
+
   /** Review + review-comment text, used as context for the Iterate flow. */
   async pullRequestFeedback(
     installationId: number,

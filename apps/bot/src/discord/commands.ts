@@ -104,6 +104,16 @@ export const commands = [
         ),
     ),
   new SlashCommandBuilder()
+    .setName("review")
+    .setDescription("Have the agent review a pull request (read-only, /ask quota)")
+    .addIntegerOption((opt) =>
+      opt
+        .setName("pr")
+        .setDescription("Pull request number on this channel's repo")
+        .setMinValue(1)
+        .setRequired(true),
+    ),
+  new SlashCommandBuilder()
     .setName("status")
     .setDescription("Show running and queued tasks in this server"),
   new SlashCommandBuilder()
@@ -120,6 +130,24 @@ export const commands = [
           opt
             .setName("role")
             .setDescription("Role to allow; omit to reset to admins only")
+            .setRequired(false),
+        ),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName("review")
+        .setDescription("Auto-review every opened PR on a repo")
+        .addStringOption((opt) =>
+          opt
+            .setName("repo")
+            .setDescription("owner/repo")
+            .setRequired(true)
+            .setAutocomplete(true),
+        )
+        .addChannelOption((opt) =>
+          opt
+            .setName("channel")
+            .setDescription("Channel for review summaries; omit to turn auto-review off")
             .setRequired(false),
         ),
     )

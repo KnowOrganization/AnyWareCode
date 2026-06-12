@@ -1,12 +1,11 @@
-import type { Client } from "discord.js";
 import { and, eq } from "drizzle-orm";
 import { schema, type Db, type Guild } from "@anywherecode/db";
-import type { Config } from "../config.js";
 import { handleIssueEvent } from "../discord/issue-feed.js";
+import type { BotContext } from "../discord/interactions.js";
 import { applyPreviewToCard } from "../discord/preview-card.js";
+import { handleAutoReview } from "../discord/review.js";
 import { postShipLog } from "../discord/shiplog.js";
 import { log } from "../observability.js";
-import type { GitHubService } from "./app.js";
 
 /**
  * GitHub webhook → Discord features (issue feed, ship log, previews,
@@ -16,12 +15,7 @@ import type { GitHubService } from "./app.js";
  * not poison the fan-out to others.
  */
 
-export interface WebhookDeps {
-  db: Db;
-  config: Config;
-  github: GitHubService;
-  client: Client;
-}
+export type WebhookDeps = BotContext;
 
 /** All guilds linked to an installation (uniqueness is not enforced). */
 export async function guildsForInstallation(
@@ -92,6 +86,25 @@ export function registerWebhookHandlers(deps: WebhookDeps): void {
       }
     })().catch((err) => log.warn({ err }, "ship log webhook failed"));
   });
+
+  // Auto-review: every opened/ready human PR on opted-in repos gets a
+  // read-only review thread + summary card.
+  webhooks.on(
+    ["pull_request.opened", "pull_request.ready_for_review"],
+    ({ payload }) => {
+      if (!payload.installation) return;
+      void handleAutoReview(
+        deps,
+        payload.installation.id,
+        payload.repository.full_name,
+        {
+          number: payload.pull_request.number,
+          isDraft: Boolean(payload.pull_request.draft),
+          headRef: payload.pull_request.head.ref,
+        },
+      ).catch((err) => log.warn({ err }, "auto-review webhook failed"));
+    },
+  );
 
   // Proactive previews: a deploy succeeded → find the PRs on that commit →
   // upgrade matching agent PR cards' Preview button to a live link.
