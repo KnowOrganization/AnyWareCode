@@ -122,5 +122,49 @@ export const commands = [
             .setDescription("Role to allow; omit to reset to admins only")
             .setRequired(false),
         ),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName("issues")
+        .setDescription("Feed new GitHub issues into a channel as Run/Dismiss cards")
+        .addStringOption((opt) =>
+          opt
+            .setName("repo")
+            .setDescription("owner/repo")
+            .setRequired(true)
+            .setAutocomplete(true),
+        )
+        .addChannelOption((opt) =>
+          opt
+            .setName("channel")
+            .setDescription("Channel for issue cards; omit to turn the feed off")
+            .setRequired(false),
+        )
+        .addStringOption((opt) =>
+          opt
+            .setName("labels")
+            .setDescription("Comma-separated label allowlist (empty = all issues)")
+            .setRequired(false),
+        )
+        .addStringOption((opt) =>
+          opt
+            .setName("trust")
+            .setDescription("Minimum issue-author trust")
+            .setRequired(false)
+            .addChoices(
+              { name: "anyone", value: "any" },
+              { name: "contributors+", value: "contributor" },
+              { name: "org members+", value: "member" },
+              { name: "owners only", value: "owner" },
+            ),
+        )
+        .addIntegerOption((opt) =>
+          opt
+            .setName("daily_cap")
+            .setDescription("Max cards per UTC day (default 10)")
+            .setMinValue(1)
+            .setMaxValue(50)
+            .setRequired(false),
+        ),
     ),
 ].map((builder) => builder.toJSON());

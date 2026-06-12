@@ -2,6 +2,7 @@ import type { Client } from "discord.js";
 import { eq } from "drizzle-orm";
 import { schema, type Db, type Guild } from "@anywherecode/db";
 import type { Config } from "../config.js";
+import { handleIssueEvent } from "../discord/issue-feed.js";
 import { log } from "../observability.js";
 import type { GitHubService } from "./app.js";
 
@@ -36,5 +37,31 @@ export function registerWebhookHandlers(deps: WebhookDeps): void {
 
   webhooks.onError((err) => {
     log.warn({ err: err.message }, "webhook handler error");
+  });
+
+  // Issue-to-Proposal: `opened` for unfiltered feeds; `labeled` so label-gated
+  // feeds surface issues when the matching label lands later. Pending-proposal
+  // dedup keeps the pair from double-posting.
+  webhooks.on(["issues.opened", "issues.labeled"], ({ payload }) => {
+    if (!payload.installation) return;
+    const issue = payload.issue;
+    void handleIssueEvent(
+      deps,
+      payload.installation.id,
+      payload.repository.full_name,
+      {
+        number: issue.number,
+        title: issue.title,
+        body: issue.body ?? "",
+        labels: (issue.labels ?? [])
+          .map((l) => (typeof l === "string" ? l : (l?.name ?? "")))
+          .filter(Boolean),
+        authorAssociation: issue.author_association,
+        authorIsBot: issue.user?.type === "Bot",
+        isPullRequest: Boolean(
+          (issue as { pull_request?: unknown }).pull_request,
+        ),
+      },
+    );
   });
 }

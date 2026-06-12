@@ -173,7 +173,8 @@ async function handleAutocomplete(
   ctx: BotContext,
   interaction: AutocompleteInteraction,
 ): Promise<void> {
-  if (interaction.commandName !== "repo") return;
+  // /repo set and /config issues both autocomplete the installation's repos.
+  if (!["repo", "config"].includes(interaction.commandName)) return;
   const guild = interaction.guildId
     ? await ctx.db.query.guilds.findFirst({
         where: eq(schema.guilds.id, interaction.guildId),
@@ -321,15 +322,95 @@ async function handleConfig(
   }
   const guildId = interaction.guildId!;
   await ensureGuild(ctx.db, guildId, ctx.config);
-  const role = interaction.options.getRole("role");
+  const sub = interaction.options.getSubcommand();
+
+  if (sub === "role") {
+    const role = interaction.options.getRole("role");
+    await ctx.db
+      .update(schema.guilds)
+      .set({ allowedRoleId: role?.id ?? null })
+      .where(eq(schema.guilds.id, guildId));
+    await interaction.reply(
+      role
+        ? `✅ Members with ${role.name} may now run agent tasks.`
+        : "✅ Reset: only server admins may run agent tasks.",
+    );
+    return;
+  }
+
+  if (sub === "issues") {
+    await handleConfigIssues(ctx, interaction);
+    return;
+  }
+}
+
+async function handleConfigIssues(
+  ctx: BotContext,
+  interaction: ChatInputCommandInteraction,
+): Promise<void> {
+  const guildId = interaction.guildId!;
+  const repoFullName = interaction.options.getString("repo", true);
+  const channel = interaction.options.getChannel("channel");
+  const labels = (interaction.options.getString("labels") ?? "")
+    .split(",")
+    .map((l) => l.trim())
+    .filter(Boolean);
+  const trust = (interaction.options.getString("trust") ?? "any") as
+    | "any"
+    | "contributor"
+    | "member"
+    | "owner";
+  const dailyCap = interaction.options.getInteger("daily_cap") ?? 10;
+
+  if (!channel) {
+    await ctx.db
+      .update(schema.repoSettings)
+      .set({ issueChannelId: null })
+      .where(
+        and(
+          eq(schema.repoSettings.guildId, guildId),
+          eq(schema.repoSettings.repoFullName, repoFullName),
+        ),
+      );
+    await interaction.reply(`✅ Issue feed for \`${repoFullName}\` turned off.`);
+    return;
+  }
+
+  // Validate the bot can actually post there before saving.
+  const resolved = await interaction.client.channels
+    .fetch(channel.id)
+    .catch(() => null);
+  if (!resolved?.isSendable()) {
+    await interaction.reply({
+      content: "I can't send messages in that channel — pick one where I have Send Messages.",
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
   await ctx.db
-    .update(schema.guilds)
-    .set({ allowedRoleId: role?.id ?? null })
-    .where(eq(schema.guilds.id, guildId));
+    .insert(schema.repoSettings)
+    .values({
+      guildId,
+      repoFullName,
+      issueChannelId: channel.id,
+      issueLabels: labels,
+      issueMinAssoc: trust,
+      issueDailyCap: dailyCap,
+      failCount: 0,
+    })
+    .onConflictDoUpdate({
+      target: [schema.repoSettings.guildId, schema.repoSettings.repoFullName],
+      set: {
+        issueChannelId: channel.id,
+        issueLabels: labels,
+        issueMinAssoc: trust,
+        issueDailyCap: dailyCap,
+        failCount: 0,
+      },
+    });
   await interaction.reply(
-    role
-      ? `✅ Members with ${role.name} may now run agent tasks.`
-      : "✅ Reset: only server admins may run agent tasks.",
+    `🐛 New issues in \`${repoFullName}\`${labels.length ? ` labeled ${labels.map((l) => `\`${l}\``).join("/")}` : ""} will appear in <#${channel.id}> as Run/Dismiss cards (max ${dailyCap}/day, author trust: ${trust}).`,
   );
 }
 

@@ -21,7 +21,7 @@ import { checkTaskPreconditions, launchTask, truncate } from "./launch.js";
  */
 
 export async function createProposal(
-  ctx: BotContext,
+  ctx: Pick<BotContext, "db" | "config">,
   args: {
     guildId: string;
     channelId: string;
@@ -30,6 +30,12 @@ export async function createProposal(
     prompt: string;
     summary: string;
     repoFullName: string;
+    source?: Proposal["source"];
+    issueNumber?: number;
+    scheduleId?: string;
+    planText?: string;
+    /** Defaults to the chat-proposal TTL. */
+    ttlMs?: number;
   },
 ): Promise<{ id: string }> {
   const id = randomUUID().slice(0, 8);
@@ -42,11 +48,28 @@ export async function createProposal(
     prompt: args.prompt,
     summary: args.summary,
     authorId: args.authorId,
+    source: args.source ?? "chat",
+    issueNumber: args.issueNumber ?? null,
+    scheduleId: args.scheduleId ?? null,
+    planText: args.planText ?? null,
     expiresAt: new Date(
-      Date.now() + ctx.config.CHAT_PROPOSAL_TTL_MINUTES * 60_000,
+      Date.now() +
+        (args.ttlMs ?? ctx.config.CHAT_PROPOSAL_TTL_MINUTES * 60_000),
     ),
   });
   return { id };
+}
+
+/** Stamp the posted card's message id (reaction approval + in-place edits). */
+export async function setProposalMessageId(
+  db: Db,
+  proposalId: string,
+  messageId: string,
+): Promise<void> {
+  await db
+    .update(schema.proposals)
+    .set({ messageId })
+    .where(eq(schema.proposals.id, proposalId));
 }
 
 export function proposalMessage(
