@@ -25,6 +25,7 @@ export function renderEventLine(event: RunnerEvent): string | null {
     case "error":
       return `⚠️ ${truncate(event.message, 300)}`;
     case "assistant_text":
+    case "diff_summary": // rendered as its own "What changed" embed
     case "done":
       return null;
   }

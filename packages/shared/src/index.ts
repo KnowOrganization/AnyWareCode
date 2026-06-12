@@ -52,6 +52,11 @@ export const taskSpecSchema = z.object({
    */
   githubToken: z.string().min(1),
   llmAuth: llmAuthSchema,
+  /**
+   * Server Memory: TRUSTED per-repo conventions doc, written by the server's
+   * maintainers (never repo content). Injected as a system-prompt section.
+   */
+  memory: z.string().max(8192).optional(),
 });
 export type TaskSpec = z.infer<typeof taskSpecSchema>;
 
@@ -77,6 +82,17 @@ export const runnerEventSchema = z.discriminatedUnion("type", [
   }),
   z.object({ type: z.literal("assistant_text"), text: z.string() }),
   z.object({ type: z.literal("pushed"), branch: z.string() }),
+  /** Per-file change stats, emitted after a successful push. */
+  z.object({
+    type: z.literal("diff_summary"),
+    files: z.array(
+      z.object({
+        path: z.string(),
+        additions: z.number(),
+        deletions: z.number(),
+      }),
+    ),
+  }),
   z.object({ type: z.literal("error"), message: z.string() }),
   z.object({
     type: z.literal("done"),

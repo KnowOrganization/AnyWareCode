@@ -17,6 +17,10 @@ describe("runner event protocol", () => {
     { type: "tests", passed: true, summary: "12/12" },
     { type: "assistant_text", text: "Done, opening a PR." },
     { type: "pushed", branch: "anywherecode/abc123" },
+    {
+      type: "diff_summary",
+      files: [{ path: "src/a.ts", additions: 12, deletions: 3 }],
+    },
     { type: "error", message: "boom" },
     { type: "done", summary: "patched" },
   ];
@@ -103,8 +107,22 @@ describe("task spec", () => {
     const spec = taskSpecSchema.parse(base);
     expect(spec.transcript).toEqual([]);
     expect(spec.resumeBranch).toBe(false);
+    expect(spec.memory).toBeUndefined();
     expect(() =>
       taskSpecSchema.parse({ ...spec, repo: "not-a-repo" }),
+    ).toThrow();
+  });
+
+  it("accepts a memory doc and strips unknown fields (old-runner safety)", () => {
+    const spec = taskSpecSchema.parse({
+      ...base,
+      memory: "we use pnpm, never npm",
+      someFutureField: true,
+    });
+    expect(spec.memory).toBe("we use pnpm, never npm");
+    expect("someFutureField" in spec).toBe(false);
+    expect(() =>
+      taskSpecSchema.parse({ ...base, memory: "x".repeat(8193) }),
     ).toThrow();
   });
 

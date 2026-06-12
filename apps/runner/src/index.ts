@@ -6,7 +6,12 @@ import {
   type TaskSpec,
 } from "@anywherecode/shared";
 import { ClaudeAgent } from "./agent.js";
-import { checkoutTaskBranch, cloneRepo, commitAndPush } from "./git.js";
+import {
+  checkoutTaskBranch,
+  cloneRepo,
+  commitAndPush,
+  diffSummary,
+} from "./git.js";
 import { emit, readLines, redactSecrets, registerSecret } from "./io.js";
 
 const WORK_ROOT = "/work";
@@ -81,7 +86,11 @@ async function main(): Promise<void> {
     const commitMessage =
       spec.prompt.split("\n")[0]?.slice(0, 72) || spec.branch;
     const pushed = await commitAndPush(gitCtx, spec.branch, commitMessage);
-    if (pushed) emit({ type: "pushed", branch: spec.branch });
+    if (pushed) {
+      emit({ type: "pushed", branch: spec.branch });
+      const files = await diffSummary(gitCtx, spec.baseBranch);
+      if (files && files.length > 0) emit({ type: "diff_summary", files });
+    }
   }
   emit({ type: "done", summary });
 }

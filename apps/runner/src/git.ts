@@ -78,6 +78,35 @@ export async function checkoutTaskBranch(
   }
 }
 
+/**
+ * Per-file change stats vs the base branch (best-effort: shallow histories may
+ * lack a merge-base; callers treat null as "no summary").
+ */
+export async function diffSummary(
+  ctx: GitContext,
+  baseBranch: string,
+): Promise<Array<{ path: string; additions: number; deletions: number }> | null> {
+  try {
+    const out = await git(ctx, [
+      "diff",
+      "--numstat",
+      `origin/${baseBranch}...HEAD`,
+    ]);
+    if (!out) return [];
+    return out.split("\n").map((line) => {
+      const [a, d, ...rest] = line.split("\t");
+      return {
+        path: rest.join("\t") || "?",
+        // Binary files show "-": count as 0.
+        additions: Number.parseInt(a ?? "0", 10) || 0,
+        deletions: Number.parseInt(d ?? "0", 10) || 0,
+      };
+    });
+  } catch {
+    return null;
+  }
+}
+
 /** Commit everything and push the task branch. Returns false if no changes. */
 export async function commitAndPush(
   ctx: GitContext,
