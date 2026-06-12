@@ -273,6 +273,7 @@ async function actOnDecision(
       mode: "code",
       prompt,
       requestedBy: message.author.username,
+      requestedById: message.author.id,
       thread: { kind: "existing", thread: message.channel as ThreadChannel },
       iterate: {
         branch: task.branch,
@@ -310,6 +311,7 @@ async function actOnDecision(
       mode,
       prompt,
       requestedBy: message.author.username,
+      requestedById: message.author.id,
       thread: { kind: "existing", thread: message.channel as ThreadChannel },
     });
     return;
@@ -343,6 +345,7 @@ async function actOnDecision(
     mode,
     prompt,
     requestedBy: message.author.username,
+      requestedById: message.author.id,
     thread: {
       kind: "create",
       client: message.client,

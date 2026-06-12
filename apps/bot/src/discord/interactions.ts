@@ -25,6 +25,7 @@ import {
   handleSetupCommand,
 } from "./connect.js";
 import { checkTaskPreconditions, launchTask, truncate } from "./launch.js";
+import { handleLinkCommand } from "./link.js";
 import { handleMemoryCommand, handleMemoryModal } from "./memory.js";
 import { handleMemorySuggestionButton } from "./memorySuggestions.js";
 import { handleOssCommand } from "./oss.js";
@@ -119,6 +120,8 @@ async function handleCommand(
       return handleScheduleCommand(ctx, interaction);
     case "standup":
       return handleStandupCommand(ctx, interaction);
+    case "link":
+      return handleLinkCommand(ctx, interaction);
   }
 }
 
@@ -191,6 +194,7 @@ async function startAgentTask(
     mode,
     prompt,
     requestedBy: interaction.user.username,
+    requestedById: interaction.user.id,
     thread: {
       kind: "create",
       client: interaction.client,
@@ -374,6 +378,20 @@ async function handleConfig(
 
   if (sub === "issues") {
     await handleConfigIssues(ctx, interaction);
+    return;
+  }
+
+  if (sub === "sponsors") {
+    const linked = interaction.options.getBoolean("linked", true);
+    await ctx.db
+      .update(schema.guilds)
+      .set({ requireLinkedSponsor: linked })
+      .where(eq(schema.guilds.id, guildId));
+    await interaction.reply(
+      linked
+        ? "🧾 Code tasks now require the sponsoring member to have a linked GitHub identity (`/link github`)."
+        : "✅ Sponsors no longer need a linked GitHub identity.",
+    );
     return;
   }
 
@@ -725,6 +743,7 @@ async function handleButton(
       mode: "code",
       prompt: `Iterate on PR #${task.prNumber} (original task: ${task.prompt}). Address the review feedback and any new instructions from the thread.`,
       requestedBy: interaction.user.username,
+    requestedById: interaction.user.id,
       thread: { kind: "existing", thread: interaction.channel as ThreadChannel },
       iterate: {
         branch: task.branch,

@@ -17,6 +17,7 @@ import { schema, type Db } from "@anywherecode/db";
 import { maybeSuggestMemory } from "../discord/memorySuggestions.js";
 import { prCardButtons } from "../discord/preview-card.js";
 import type { GitHubService } from "../github/app.js";
+import { getUserLink } from "../github/user-link.js";
 import { isAuthError, resolveLlmAuth } from "../llm/credentials.js";
 import { log } from "../observability.js";
 import { GuildTaskLimiter } from "./limiter.js";
@@ -32,6 +33,10 @@ export interface StartTaskParams {
   repoFullName: string;
   prompt: string;
   requestedBy: string;
+  /** Sponsor's Discord user id (provenance: GitHub identity lookup). */
+  requestedById?: string;
+  /** Provenance: who approved the plan vote (omitted = instant mode). */
+  planApprovedBy?: string;
   mode: "code" | "ask";
   /** Quota bucket launchTask consumed for this task; refunds reverse it. */
   fundedBy?: FundedBy;
@@ -136,6 +141,7 @@ export class TaskOrchestrator {
       prompt: params.prompt,
       requestedBy: params.requestedBy,
       fundedBy: params.fundedBy ?? "plan",
+      planApprovedBy: params.planApprovedBy ?? null,
     });
 
     // Registered before acquiring a slot so /cancel works even while queued.
@@ -227,6 +233,19 @@ export class TaskOrchestrator {
         eq(schema.serverMemories.repoFullName, params.repoFullName),
       ),
     });
+    // Provenance: the receipt's identity line + commit trailers.
+    const sponsorLink = params.requestedById
+      ? await getUserLink(this.db, params.requestedById)
+      : null;
+    const initiatedBy = `discord:${params.requestedBy}${
+      sponsorLink ? ` (github:${sponsorLink.githubLogin})` : ""
+    }`;
+    const threadUrl = `https://discord.com/channels/${params.guildId}/${thread.id}`;
+    const trailers = [
+      `Initiated-by: ${initiatedBy}`,
+      `Task-thread: ${threadUrl}`,
+      "Sponsored-via: AnywhereCode",
+    ];
     const spec: TaskSpec = {
       taskId,
       repo: params.repoFullName,
@@ -245,6 +264,7 @@ export class TaskOrchestrator {
       llmAuth: resolved.auth,
       mcpServers: [],
       ...(memoryRow?.content.trim() ? { memory: memoryRow.content } : {}),
+      ...(params.mode === "code" ? { provenance: { trailers } } : {}),
     };
 
     // Only non-secret config goes in the container environment.
@@ -309,6 +329,7 @@ export class TaskOrchestrator {
     let summary: string | undefined;
     let diffFiles: Array<{ path: string; additions: number; deletions: number }> =
       [];
+    const testResults: Array<{ passed: boolean; summary: string }> = [];
 
     try {
       for await (const event of handle.events) {
@@ -320,6 +341,7 @@ export class TaskOrchestrator {
         }
         if (event.type === "pushed") pushed = true;
         if (event.type === "diff_summary") diffFiles = event.files;
+        if (event.type === "tests") testResults.push(event);
         if (event.type === "error") errorMessage = event.message;
         if (event.type === "done") summary = event.summary;
         if (renderer.add(event)) updater.schedule();
@@ -401,6 +423,14 @@ export class TaskOrchestrator {
       return out("done", { summary });
     }
 
+    const receipt = provenanceReceipt({
+      initiatedBy,
+      planApprovedBy: params.planApprovedBy ?? null,
+      steeredBy: [...new Set(task.corrections.map((c) => c.author))],
+      testResults,
+      diffFiles,
+      threadUrl,
+    });
     let prNumber: number;
     let prUrl: string;
     if (params.iterate) {
@@ -413,7 +443,7 @@ export class TaskOrchestrator {
         branch,
         baseBranch,
         title: params.prompt.split("\n")[0]?.slice(0, 72) ?? branch,
-        body: `${params.prompt}\n\n---\nOpened by AnywhereCode from a Discord session.`,
+        body: `${params.prompt}\n\n${receipt}`,
       });
       prNumber = pr.number;
       prUrl = pr.url;
@@ -488,6 +518,45 @@ export class TaskOrchestrator {
 
 function progressEmbed(description: string): EmbedBuilder {
   return new EmbedBuilder().setColor(0x5865f2).setDescription(description);
+}
+
+/**
+ * The accountability layer's public artifact: every agent PR says who asked,
+ * who approved, who steered, and what was verified — with a link to the
+ * public thread where it all happened.
+ */
+export function provenanceReceipt(args: {
+  initiatedBy: string;
+  planApprovedBy: string | null;
+  steeredBy: string[];
+  testResults: Array<{ passed: boolean; summary: string }>;
+  diffFiles: Array<{ path: string; additions: number; deletions: number }>;
+  threadUrl: string;
+}): string {
+  const verified: string[] = [];
+  for (const t of args.testResults.slice(-3)) {
+    verified.push(`${t.passed ? "✅" : "❌"} ${t.summary.slice(0, 120)}`);
+  }
+  if (args.diffFiles.length > 0) {
+    const add = args.diffFiles.reduce((n, f) => n + f.additions, 0);
+    const del = args.diffFiles.reduce((n, f) => n + f.deletions, 0);
+    verified.push(`diff: ${args.diffFiles.length} file(s), +${add} −${del}`);
+  }
+  return [
+    "---",
+    "### 🧾 Provenance",
+    `- **Initiated by:** ${args.initiatedBy} — human sponsor`,
+    ...(args.planApprovedBy
+      ? [`- **Plan approved by:** discord:${args.planApprovedBy}`]
+      : []),
+    ...(args.steeredBy.length > 0
+      ? [`- **Steered by:** ${args.steeredBy.map((s) => `discord:${s}`).join(", ")}`]
+      : []),
+    `- **Verified:** ${verified.length > 0 ? verified.join(" · ") : "no test evidence recorded"}`,
+    `- **Task thread:** ${args.threadUrl}`,
+    "",
+    "_Opened by AnywhereCode from a Discord session; humans remain the merge gate._",
+  ].join("\n");
 }
 
 const MAX_DIFF_FILES = 20;

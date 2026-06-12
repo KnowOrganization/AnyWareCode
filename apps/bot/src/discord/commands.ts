@@ -104,6 +104,17 @@ export const commands = [
         ),
     ),
   new SlashCommandBuilder()
+    .setName("link")
+    .setDescription("Verify your identity for provenance receipts")
+    .addSubcommand((sub) =>
+      sub
+        .setName("github")
+        .setDescription("Link your GitHub account (only your public login is stored)"),
+    )
+    .addSubcommand((sub) =>
+      sub.setName("remove").setDescription("Unlink your GitHub account"),
+    ),
+  new SlashCommandBuilder()
     .setName("standup")
     .setDescription("Voice → PR: listen in a voice channel and turn action items into proposals")
     .addSubcommand((sub) =>
@@ -193,6 +204,17 @@ export const commands = [
             .setName("role")
             .setDescription("Role to allow; omit to reset to admins only")
             .setRequired(false),
+        ),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName("sponsors")
+        .setDescription("Require sponsors of code tasks to have a linked GitHub identity")
+        .addBooleanOption((opt) =>
+          opt
+            .setName("linked")
+            .setDescription("true = members must /link github before running code tasks")
+            .setRequired(true),
         ),
     )
     .addSubcommand((sub) =>

@@ -42,6 +42,8 @@ export async function consumeInstallState(
     .returning();
   if (!row) return null;
   if (row.expiresAt.getTime() < Date.now()) return null;
+  // User-link states (user-link.ts) share this table; never accept one here.
+  if (row.guildId.startsWith("user:")) return null;
   return row.guildId;
 }
 

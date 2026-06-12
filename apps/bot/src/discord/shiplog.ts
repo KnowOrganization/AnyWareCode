@@ -40,7 +40,10 @@ export async function postShipLog(
     .setURL(prUrl)
     .setDescription(`\`${task.repoFullName}\` — [PR #${task.prNumber}](${prUrl})`)
     .addFields(
-      { name: "Steered by", value: task.requestedBy, inline: true },
+      { name: "Sponsor", value: task.requestedBy, inline: true },
+      ...(task.planApprovedBy
+        ? [{ name: "Plan approved by", value: task.planApprovedBy, inline: true }]
+        : []),
       ...(mergedBy ? [{ name: "Merged by", value: mergedBy, inline: true }] : []),
       ...(task.previewUrl
         ? [{ name: "Preview", value: task.previewUrl, inline: true }]

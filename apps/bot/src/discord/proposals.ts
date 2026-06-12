@@ -246,6 +246,7 @@ export async function handleProposalButton(
     mode: "code",
     prompt: proposal.prompt,
     requestedBy: interaction.user.username,
+    requestedById: interaction.user.id,
     thread: existingThread
       ? { kind: "existing", thread: existingThread }
       : {

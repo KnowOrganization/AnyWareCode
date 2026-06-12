@@ -4,6 +4,12 @@ import type { Config } from "../config.js";
 import { claimOrgTrial, schema, type Db } from "@anywherecode/db";
 import type { GitHubService } from "../github/app.js";
 import { consumeInstallState } from "../github/install-state.js";
+import {
+  consumeUserLinkState,
+  exchangeCodeForLogin,
+  upsertUserLink,
+  userLinkingEnabled,
+} from "../github/user-link.js";
 
 export interface ServerDeps {
   db: Db;
@@ -93,6 +99,44 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
         "<h1>✅ AnywhereCode is connected</h1><p>Head back to Discord and type <code>/repo set</code>, then <code>/code</code> in any channel.</p>",
       );
   });
+
+  /**
+   * GitHub user-OAuth callback (/link github). The state is HMAC-signed and
+   * single-use; the OAuth token never outlives exchangeCodeForLogin — only
+   * the verified login is stored, for provenance receipts.
+   */
+  if (userLinkingEnabled(deps.config)) {
+    app.get<{
+      Querystring: { code?: string; state?: string };
+    }>("/github/user-callback", async (request, reply) => {
+      const { code, state } = request.query;
+      if (!code || !state) {
+        return reply.code(400).send("Missing code or state.");
+      }
+      const discordUserId = await consumeUserLinkState(
+        deps.db,
+        deps.config.STATE_SECRET,
+        state,
+      );
+      if (!discordUserId) {
+        return reply
+          .code(403)
+          .send("Invalid or expired link. Run /link github in Discord again.");
+      }
+      const login = await exchangeCodeForLogin(deps.config, code);
+      if (!login) {
+        return reply
+          .code(502)
+          .send("GitHub didn't confirm your identity. Run /link github again.");
+      }
+      await upsertUserLink(deps.db, discordUserId, login);
+      return reply
+        .type("text/html")
+        .send(
+          `<h1>✅ Linked as ${login}</h1><p>Your agent contributions now carry your verified GitHub identity. You can close this tab.</p>`,
+        );
+    });
+  }
 
   /**
    * GitHub App webhook receiver. Scoped plugin so the raw-string body parser

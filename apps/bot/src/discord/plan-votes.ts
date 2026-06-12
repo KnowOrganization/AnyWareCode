@@ -159,6 +159,8 @@ export async function approvePlanProposal(
     mode: "code",
     prompt: proposal.prompt,
     requestedBy: approver.username,
+    requestedById: approver.id,
+    planApprovedBy: approver.username,
     thread: {
       kind: "create",
       client,

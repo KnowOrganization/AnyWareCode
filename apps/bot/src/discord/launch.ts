@@ -12,6 +12,7 @@ import type { Guild } from "@anywherecode/db";
 import { getOrgTrial } from "@anywherecode/db";
 import { isClaudeOauthEnabled } from "../flags.js";
 import { createInstallState } from "../github/install-state.js";
+import { getUserLink, userLinkingEnabled } from "../github/user-link.js";
 import { resolveLlmAuth, type ResolvedLlmAuth } from "../llm/credentials.js";
 import { captureError } from "../observability.js";
 import type { RunOutcome } from "../orchestrator/taskRunner.js";
@@ -51,6 +52,22 @@ export async function checkTaskPreconditions(
       reason:
         "You don't have permission to run agent tasks here. Ask an admin to grant your role with `/config role`.",
     };
+  }
+  // Accountability gate: this server requires code-task sponsors to carry a
+  // verified GitHub identity on the provenance receipt.
+  if (
+    mode === "code" &&
+    guild.requireLinkedSponsor &&
+    userLinkingEnabled(ctx.config)
+  ) {
+    const userId = "user" in member && member.user ? member.user.id : (member as GuildMember).id;
+    if (!(await getUserLink(ctx.db, userId))) {
+      return {
+        ok: false,
+        reason:
+          "This server requires a linked GitHub identity to sponsor agent tasks — run `/link github` first.",
+      };
+    }
   }
   return checkSystemTaskPreconditions(ctx, guild, mode, repoRef, prompt);
 }
@@ -212,6 +229,10 @@ export interface LaunchTaskRequest {
   mode: "code" | "ask";
   prompt: string;
   requestedBy: string;
+  /** Sponsor's Discord user id (provenance: GitHub identity lookup). */
+  requestedById?: string;
+  /** Provenance: who approved the plan vote (omitted = instant mode). */
+  planApprovedBy?: string;
   thread: ThreadStrategy;
   iterate?: { branch: string; prNumber: number; transcript: TranscriptEntry[] };
   /** Extra context injected as prior conversation (e.g. a PR diff for review). */
@@ -265,6 +286,8 @@ export async function launchTask(
       requestedBy: req.requestedBy,
       mode: req.mode,
       fundedBy,
+      ...(req.requestedById ? { requestedById: req.requestedById } : {}),
+      ...(req.planApprovedBy ? { planApprovedBy: req.planApprovedBy } : {}),
       ...(req.iterate ? { iterate: req.iterate } : {}),
       ...(req.transcript ? { transcript: req.transcript } : {}),
       ...(req.checkoutRef ? { checkoutRef: req.checkoutRef } : {}),
