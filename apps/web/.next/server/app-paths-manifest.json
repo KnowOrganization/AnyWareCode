@@ -1,4 +1,17 @@
 {
+  "/_not-found/page": "app/_not-found/page.js",
   "/icon.svg/route": "app/icon.svg/route.js",
-  "/page": "app/page.js"
+  "/api/auth/[...nextauth]/route": "app/api/auth/[...nextauth]/route.js",
+  "/api/checkout/pack/route": "app/api/checkout/pack/route.js",
+  "/api/checkout/route": "app/api/checkout/route.js",
+  "/api/admin/flags/route": "app/api/admin/flags/route.js",
+  "/api/admin/oss/route": "app/api/admin/oss/route.js",
+  "/api/stripe/webhook/route": "app/api/stripe/webhook/route.js",
+  "/api/portal/route": "app/api/portal/route.js",
+  "/dashboard/[guildId]/page": "app/dashboard/[guildId]/page.js",
+  "/packs/[guildId]/page": "app/packs/[guildId]/page.js",
+  "/page": "app/page.js",
+  "/dashboard/page": "app/dashboard/page.js",
+  "/legal/privacy/page": "app/legal/privacy/page.js",
+  "/legal/terms/page": "app/legal/terms/page.js"
 }
