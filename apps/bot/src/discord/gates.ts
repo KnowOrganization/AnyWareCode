@@ -15,10 +15,46 @@ export const ASK_CAP_MULTIPLIER = 4;
 const DAY_MS = 86_400_000;
 
 /** Subset of config the guild lifecycle + plan resolution need. */
-export type GuildCaps = Pick<
-  Config,
-  "TRIAL_DAYS" | "PLATFORM_TRIAL_TASK_CAP" | "FREE_TASK_CAP"
->;
+export type GuildCaps = Pick<Config, "TRIAL_DAYS" | "PLATFORM_TRIAL_TASK_CAP">;
+
+/** Human-facing names per plan row id. */
+export const PLAN_LABELS: Record<string, string> = {
+  oss: "OSS Community",
+  pro: "Pro",
+  studio: "Studio",
+};
+
+/**
+ * Single entitlement source. Everything that branches on "what tier is this
+ * guild" derives it from here, never from subStatus alone.
+ */
+export type Tier =
+  | { kind: "trial" }
+  | { kind: "oss" }
+  | { kind: "paid"; planId: string }
+  | { kind: "none"; reason: "trial_expired" | "canceled" };
+
+export function resolveTier(guild: Guild): Tier {
+  if (guild.subStatus === "trialing") return { kind: "trial" };
+  if (guild.planId === "oss" && guild.ossStatus === "approved")
+    return { kind: "oss" };
+  // past_due keeps entitlements (Stripe retry grace); /billing shows a warning.
+  if (
+    guild.planId &&
+    (guild.subStatus === "active" || guild.subStatus === "past_due")
+  )
+    return { kind: "paid", planId: guild.planId };
+  return {
+    kind: "none",
+    reason: guild.subStatus === "canceled" ? "canceled" : "trial_expired",
+  };
+}
+
+/** Whether pack tasks may be spent right now (never during trial/none). */
+export function packSpendable(guild: Guild): boolean {
+  const tier = resolveTier(guild);
+  return tier.kind === "oss" || tier.kind === "paid";
+}
 
 export function canInvoke(
   guild: Guild,
@@ -39,12 +75,34 @@ export function canInvoke(
   return false;
 }
 
+export interface CapState {
+  exceeded: boolean;
+  used: number;
+  cap: number;
+  needsReset: boolean;
+  /** OSS tier gets unlimited /ask. */
+  unlimited: boolean;
+  /** Pack tasks available to spend once the plan cap is exhausted. */
+  packRemaining: number;
+}
+
 export function capState(
   guild: Guild,
   mode: "code" | "ask",
   now: Date = new Date(),
-): { exceeded: boolean; used: number; cap: number; needsReset: boolean } {
+): CapState {
   const needsReset = now >= guild.capResetAt;
+  const tier = resolveTier(guild);
+  if (tier.kind === "oss" && mode === "ask") {
+    return {
+      exceeded: false,
+      used: needsReset ? 0 : guild.asksUsedThisMonth,
+      cap: Number.POSITIVE_INFINITY,
+      needsReset,
+      unlimited: true,
+      packRemaining: 0,
+    };
+  }
   const cap =
     mode === "code" ? guild.taskCap : guild.taskCap * ASK_CAP_MULTIPLIER;
   const used = needsReset
@@ -52,7 +110,17 @@ export function capState(
     : mode === "code"
       ? guild.tasksUsedThisMonth
       : guild.asksUsedThisMonth;
-  return { exceeded: used >= cap, used, cap, needsReset };
+  // Packs fund code tasks only, and only on tiers where they're spendable.
+  const packRemaining =
+    mode === "code" && packSpendable(guild) ? guild.packTasksRemaining : 0;
+  return {
+    exceeded: used >= cap && packRemaining <= 0,
+    used,
+    cap,
+    needsReset,
+    unlimited: false,
+    packRemaining,
+  };
 }
 
 export function nextMonthStart(from: Date = new Date()): Date {
@@ -68,31 +136,47 @@ export function allowPlatformKey(guild: Guild): boolean {
 }
 
 export interface PlanSummary {
-  tier: "Trial" | "Pro" | "Free" | "Past due" | "Canceled";
+  /** Display label, e.g. "Pro", "Pro (payment overdue)", "Trial", "No plan". */
+  tier: string;
   status: Guild["subStatus"];
   codeCap: number;
   askCap: number;
+  /** Infinity when unlimited (OSS /ask). */
   trialDaysLeft: number | null;
+  packRemaining: number;
 }
 
 /** Human-facing tier view for `/billing` and the dashboard. */
 export function planSummary(guild: Guild, now: Date = new Date()): PlanSummary {
-  const askCap = guild.taskCap * ASK_CAP_MULTIPLIER;
+  const resolved = resolveTier(guild);
+  const askCap =
+    resolved.kind === "oss"
+      ? Number.POSITIVE_INFINITY
+      : guild.taskCap * ASK_CAP_MULTIPLIER;
   const trialDaysLeft =
-    guild.subStatus === "trialing" && guild.trialEndsAt
+    resolved.kind === "trial" && guild.trialEndsAt
       ? Math.max(0, Math.ceil((guild.trialEndsAt.getTime() - now.getTime()) / DAY_MS))
       : null;
-  const tier: PlanSummary["tier"] =
-    guild.subStatus === "active"
-      ? "Pro"
-      : guild.subStatus === "trialing"
-        ? "Trial"
-        : guild.subStatus === "past_due"
-          ? "Past due"
-          : guild.subStatus === "canceled"
+  const tier =
+    resolved.kind === "trial"
+      ? "Trial"
+      : resolved.kind === "oss"
+        ? (PLAN_LABELS["oss"] ?? "OSS Community")
+        : resolved.kind === "paid"
+          ? `${PLAN_LABELS[resolved.planId] ?? resolved.planId}${
+              guild.subStatus === "past_due" ? " (payment overdue)" : ""
+            }`
+          : resolved.reason === "canceled"
             ? "Canceled"
-            : "Free";
-  return { tier, status: guild.subStatus, codeCap: guild.taskCap, askCap, trialDaysLeft };
+            : "No plan";
+  return {
+    tier,
+    status: guild.subStatus,
+    codeCap: guild.taskCap,
+    askCap,
+    trialDaysLeft,
+    packRemaining: guild.packTasksRemaining,
+  };
 }
 
 /**
@@ -133,6 +217,7 @@ export async function ensureGuild(
 
   const updates: Partial<typeof schema.guilds.$inferInsert> = {};
   if (now >= existing.capResetAt) {
+    // Monthly counters only — packTasksRemaining survives resets.
     updates.tasksUsedThisMonth = 0;
     updates.asksUsedThisMonth = 0;
     updates.capResetAt = nextMonthStart(now);
@@ -144,11 +229,14 @@ export async function ensureGuild(
   } else if (
     existing.subStatus === "trialing" &&
     existing.trialEndsAt &&
-    now >= existing.trialEndsAt
+    now >= existing.trialEndsAt &&
+    existing.planId === null
   ) {
-    // Trial elapsed without a paid subscription → free tier.
+    // Trial elapsed without a plan → no entitlements. The planId guard keeps
+    // this from clobbering an OSS grant or a paid plan that landed mid-trial.
     updates.subStatus = "free";
-    updates.taskCap = config.FREE_TASK_CAP;
+    updates.taskCap = 0;
+    updates.concurrency = 1;
   }
 
   if (Object.keys(updates).length === 0) return existing;

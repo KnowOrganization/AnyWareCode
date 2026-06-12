@@ -50,7 +50,6 @@ const orchestrator = new TaskOrchestrator(
   new DockerWorkspace(config),
   config,
 );
-const ctx: BotContext = { db, config, github, orchestrator };
 
 // Register slash commands (global PUT, idempotent — safe to run on every boot).
 await registerCommands(config);
@@ -58,11 +57,13 @@ await registerCommands(config);
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
   ],
   partials: [Partials.Channel],
 });
+const ctx: BotContext = { db, config, github, orchestrator, client };
 
 client.on(Events.ClientReady, async (ready) => {
   log.info(`Logged in as ${ready.user.tag}`);

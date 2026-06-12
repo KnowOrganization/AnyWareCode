@@ -1,7 +1,7 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import { eq, sql } from "drizzle-orm";
 import type { Config } from "../config.js";
-import { schema, type Db } from "@anywherecode/db";
+import { claimOrgTrial, schema, type Db } from "@anywherecode/db";
 import type { GitHubService } from "../github/app.js";
 import { consumeInstallState } from "../github/install-state.js";
 
@@ -62,7 +62,8 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
         .code(403)
         .send("Invalid or expired link. Start over from the Connect GitHub button in Discord.");
     }
-    if (!(await deps.github.validateInstallation(installationId))) {
+    const installation = await deps.github.validateInstallation(installationId);
+    if (!installation) {
       return reply
         .code(403)
         .send("Could not verify that installation. Start over from Discord.");
@@ -70,8 +71,18 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
 
     await deps.db
       .update(schema.guilds)
-      .set({ githubInstallationId: installationId })
+      .set({
+        githubInstallationId: installationId,
+        githubAccountLogin: installation.accountLogin,
+      })
       .where(eq(schema.guilds.id, guildId));
+    // Claim the org's one platform-key trial; first guild to link wins. The
+    // claim is permanent — re-linking elsewhere can't mint a fresh trial.
+    if (installation.accountLogin) {
+      await claimOrgTrial(deps.db, installation.accountLogin, guildId).catch(
+        (err) => request.log.warn({ err }, "org trial claim failed"),
+      );
+    }
     await deps.onInstallationLinked(guildId).catch((err) => {
       request.log.warn({ err }, "failed to announce link in Discord");
     });

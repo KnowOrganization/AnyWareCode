@@ -23,16 +23,20 @@ export class GitHubService {
    * Confirms this App actually owns `installationId` by reading it with the
    * App JWT. The install callback gets `installation_id` straight from the
    * query string, so without this check a valid state could be paired with an
-   * attacker-chosen installation. Returns false on any lookup failure.
+   * attacker-chosen installation. Returns the installation owner's login on
+   * success (org or user — used for one-trial-per-org), null on any failure.
    */
-  async validateInstallation(installationId: number): Promise<boolean> {
+  async validateInstallation(
+    installationId: number,
+  ): Promise<{ accountLogin: string | null } | null> {
     try {
-      await this.app.octokit.rest.apps.getInstallation({
+      const { data } = await this.app.octokit.rest.apps.getInstallation({
         installation_id: installationId,
       });
-      return true;
+      const account = data.account as { login?: string } | null;
+      return { accountLogin: account?.login ?? null };
     } catch {
-      return false;
+      return null;
     }
   }
 

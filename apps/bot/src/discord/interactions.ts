@@ -3,6 +3,7 @@ import {
   type AutocompleteInteraction,
   type ButtonInteraction,
   type ChatInputCommandInteraction,
+  type Client,
   type Interaction,
   type ModalSubmitInteraction,
   type ThreadChannel,
@@ -31,6 +32,8 @@ export interface BotContext {
   config: Config;
   github: GitHubService;
   orchestrator: TaskOrchestrator;
+  /** Discord client; used by gates that need live guild data (trial gates). */
+  client: Client;
 }
 
 export async function handleInteraction(

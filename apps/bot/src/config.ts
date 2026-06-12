@@ -37,9 +37,10 @@ const configSchema = z.object({
   RUNNER_NETWORK: z.string().default(""),
   /** http://host:port of the egress allowlist proxy, if RUNNER_NETWORK is set. */
   RUNNER_HTTPS_PROXY: z.string().default(""),
-  DEFAULT_TASK_CAP: z.coerce.number().int().default(50),
   /** Hard wall-clock limit per task. */
   TASK_TIMEOUT_MINUTES: z.coerce.number().int().default(30),
+  /** Tighter wall-clock limit for platform-key (trial) tasks. */
+  TRIAL_TASK_TIMEOUT_MINUTES: z.coerce.number().int().default(15),
   /** Minutes a GitHub-App install link stays valid before it must be reissued. */
   INSTALL_STATE_TTL_MINUTES: z.coerce.number().int().default(10),
   /** Model for bot-side mention classification/replies (custom providers use their own). */
@@ -58,8 +59,28 @@ const configSchema = z.object({
   TRIAL_DAYS: z.coerce.number().int().default(14),
   /** Monthly /code cap during the trial (bounds platform-key token cost). */
   PLATFORM_TRIAL_TASK_CAP: z.coerce.number().int().default(10),
-  /** Monthly /code cap after the trial without a paid subscription (BYO required). */
-  FREE_TASK_CAP: z.coerce.number().int().default(5),
+  /** Trial abuse gate: minimum Discord server age (snowflake-derived). */
+  TRIAL_MIN_SERVER_AGE_DAYS: z.coerce.number().int().default(30),
+  /** Trial abuse gate: minimum non-bot members. */
+  TRIAL_MIN_HUMAN_MEMBERS: z.coerce.number().int().default(5),
+  /** GitHub App webhook secret; unset = /github/webhook disabled. */
+  GITHUB_WEBHOOK_SECRET: z.string().min(16).optional(),
+  /** Hours an issue-feed proposal's Run button stays valid. */
+  ISSUE_PROPOSAL_TTL_HOURS: z.coerce.number().int().default(72),
+  /** Hours a scheduled-task proposal's Run button stays valid. */
+  SCHEDULE_PROPOSAL_TTL_HOURS: z.coerce.number().int().default(24),
+  /** Minutes a plan-vote card stays approvable. */
+  PLAN_VOTE_TTL_MINUTES: z.coerce.number().int().default(120),
+  /** Max schedules per guild on tiers with the scheduled_tasks feature. */
+  SCHEDULE_MAX_PER_GUILD: z.coerce.number().int().default(5),
+  /** Server Memory size cap (Discord modal max is 4000). */
+  MEMORY_MAX_CHARS: z.coerce.number().int().default(4000),
+  /** Whisper transcription for /standup; unset = standup disabled. */
+  OPENAI_API_KEY: z.string().min(1).optional(),
+  /** Auto-stop a standup session after this many minutes. */
+  STANDUP_MAX_MINUTES: z.coerce.number().int().default(30),
+  /** Force-flush a single utterance buffer after this many seconds. */
+  STANDUP_MAX_UTTERANCE_SECONDS: z.coerce.number().int().default(60),
   /** Public dashboard URL for upgrade/billing links. */
   WEB_URL: z.string().default(""),
 });

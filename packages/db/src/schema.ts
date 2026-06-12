@@ -176,7 +176,163 @@ export const proposals = pgTable("proposals", {
   status: text("status", { enum: ["pending", "accepted", "dismissed"] })
     .notNull()
     .default("pending"),
+  /** What produced this proposal; gates dismiss rules + card rendering. */
+  source: text("source", {
+    enum: ["chat", "issue", "schedule", "plan", "standup"],
+  })
+    .notNull()
+    .default("chat"),
+  /** source=issue: the GitHub issue number. */
+  issueNumber: integer("issue_number"),
+  /** source=schedule: the schedules row that fired. */
+  scheduleId: text("schedule_id"),
+  /** source=plan: the generated plan shown on the vote card. */
+  planText: text("plan_text"),
+  /** Discord message id of the card (reaction approval + in-place edits). */
+  messageId: text("message_id"),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+/** Task-pack purchase ledger. Unique Stripe session id makes webhook
+ * retries/replays idempotent; announcedAt drives the bot's public credit. */
+export const taskPackPurchases = pgTable("task_pack_purchases", {
+  id: text("id").primaryKey(),
+  guildId: text("guild_id").notNull(),
+  /** Discord user id of the buyer. */
+  purchasedBy: text("purchased_by").notNull(),
+  purchaserName: text("purchaser_name").notNull(),
+  tasks: integer("tasks").notNull(),
+  amountCents: integer("amount_cents").notNull(),
+  stripeCheckoutSessionId: text("stripe_checkout_session_id")
+    .notNull()
+    .unique(),
+  announcedAt: timestamp("announced_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+/** One platform-key trial per GitHub org/user. Claimed at install-link time,
+ * enforced when a platform-key task launches. */
+export const githubOrgTrials = pgTable("github_org_trials", {
+  /** Lowercased installation account login. */
+  orgLogin: text("org_login").primaryKey(),
+  guildId: text("guild_id").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+/** Operator-flippable runtime flags (e.g. claude_oauth kill switch). */
+export const appSettings = pgTable("app_settings", {
+  key: text("key").primaryKey(),
+  value: jsonb("value").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+/** GitHub webhook delivery dedup (X-GitHub-Delivery). Pruned at boot. */
+export const webhookDeliveries = pgTable("webhook_deliveries", {
+  deliveryId: text("delivery_id").primaryKey(),
+  event: text("event").notNull(),
+  receivedAt: timestamp("received_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+/** Per-repo feature config (issue feed, auto-review). Guild-singleton config
+ * lives as columns on guilds instead. */
+export const repoSettings = pgTable(
+  "repo_settings",
+  {
+    guildId: text("guild_id").notNull(),
+    repoFullName: text("repo_full_name").notNull(),
+    /** Issue-to-Proposal feed channel; null = off. */
+    issueChannelId: text("issue_channel_id"),
+    /** Label allowlist; empty = all labels. */
+    issueLabels: jsonb("issue_labels").$type<string[]>().notNull().default([]),
+    /** Minimum author_association for issue authors. */
+    issueMinAssoc: text("issue_min_assoc", {
+      enum: ["any", "contributor", "member", "owner"],
+    })
+      .notNull()
+      .default("any"),
+    issueDailyCap: integer("issue_daily_cap").notNull().default(10),
+    issueCountToday: integer("issue_count_today").notNull().default(0),
+    /** UTC day bucket the count belongs to. */
+    issueCountDate: timestamp("issue_count_date", { withTimezone: true }),
+    autoReview: boolean("auto_review").notNull().default(false),
+    reviewChannelId: text("review_channel_id"),
+    /** Consecutive Discord post failures; feed disables itself at 3. */
+    failCount: integer("fail_count").notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.guildId, t.repoFullName] })],
+);
+
+/** Recurring scheduled tasks ("the night shift"). Fire = proposal card. */
+export const schedules = pgTable("schedules", {
+  id: text("id").primaryKey(),
+  guildId: text("guild_id").notNull(),
+  channelId: text("channel_id").notNull(),
+  repoFullName: text("repo_full_name").notNull(),
+  prompt: text("prompt").notNull(),
+  cadence: text("cadence", { enum: ["daily", "weekly"] }).notNull(),
+  hourUtc: integer("hour_utc").notNull(),
+  /** 0–6 (Sunday=0); weekly cadence only. */
+  dayOfWeek: integer("day_of_week"),
+  nextRunAt: timestamp("next_run_at", { withTimezone: true }).notNull(),
+  lastRunAt: timestamp("last_run_at", { withTimezone: true }),
+  enabled: boolean("enabled").notNull().default(true),
+  failCount: integer("fail_count").notNull().default(0),
+  createdBy: text("created_by").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+/** Server Memory: trusted per-repo conventions doc injected into every run. */
+export const serverMemories = pgTable(
+  "server_memories",
+  {
+    guildId: text("guild_id").notNull(),
+    repoFullName: text("repo_full_name").notNull(),
+    content: text("content").notNull(),
+    updatedBy: text("updated_by").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.guildId, t.repoFullName] })],
+);
+
+/** Agent-proposed memory additions awaiting a save/dismiss click. */
+export const memorySuggestions = pgTable("memory_suggestions", {
+  id: text("id").primaryKey(),
+  guildId: text("guild_id").notNull(),
+  repoFullName: text("repo_full_name").notNull(),
+  /** Newline-separated one-line rules. */
+  rules: text("rules").notNull(),
+  status: text("status", { enum: ["pending", "saved", "dismissed"] })
+    .notNull()
+    .default("pending"),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+/** Spectate Stage B event log (deferred feature; table ships now so the
+ * protocol release doesn't need a second migration). */
+export const taskEvents = pgTable("task_events", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  taskId: text("task_id").notNull(),
+  seq: integer("seq").notNull(),
+  type: text("type").notNull(),
+  payload: jsonb("payload").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
@@ -188,3 +344,8 @@ export type SetupState = typeof setupStates.$inferSelect;
 export type Proposal = typeof proposals.$inferSelect;
 export type Plan = typeof plans.$inferSelect;
 export type SubStatus = Guild["subStatus"];
+export type TaskPackPurchase = typeof taskPackPurchases.$inferSelect;
+export type RepoSettings = typeof repoSettings.$inferSelect;
+export type Schedule = typeof schedules.$inferSelect;
+export type ServerMemory = typeof serverMemories.$inferSelect;
+export type MemorySuggestion = typeof memorySuggestions.$inferSelect;

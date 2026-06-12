@@ -14,7 +14,7 @@ export async function recoverStaleTasks(
     .returning();
 
   for (const task of stale) {
-    await refundUsage(db, task.guildId, task.mode);
+    await refundUsage(db, task.guildId, task.mode, task.fundedBy);
     await notify(
       task.threadId,
       "⚠️ Bot restarted mid-task. Task marked failed and quota refunded — rerun `/code` to retry.",

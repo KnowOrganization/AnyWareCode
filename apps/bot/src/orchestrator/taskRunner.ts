@@ -19,7 +19,7 @@ import { isAuthError, resolveLlmAuth } from "../llm/credentials.js";
 import { log } from "../observability.js";
 import { GuildTaskLimiter } from "./limiter.js";
 import { ProgressRenderer, ThrottledUpdater } from "./renderer.js";
-import { refundUsage } from "./usage.js";
+import { refundUsage, type FundedBy } from "./usage.js";
 import type { Workspace, WorkspaceHandle } from "./workspace.js";
 
 export interface StartTaskParams {
@@ -31,6 +31,8 @@ export interface StartTaskParams {
   prompt: string;
   requestedBy: string;
   mode: "code" | "ask";
+  /** Quota bucket launchTask consumed for this task; refunds reverse it. */
+  fundedBy?: FundedBy;
   /** Iterate flow: continue an existing branch/PR instead of opening a new one. */
   iterate?: {
     branch: string;
@@ -45,6 +47,7 @@ interface ActiveTask {
   taskId: string;
   guildId: string;
   mode: "code" | "ask";
+  fundedBy: FundedBy;
   /** Null until the container starts (e.g. while queued behind another task). */
   handle: WorkspaceHandle | null;
   /** Set when the task is being stopped, so the run loop reports it correctly. */
@@ -54,7 +57,7 @@ interface ActiveTask {
 }
 
 export class TaskOrchestrator {
-  private limiter = new GuildTaskLimiter(1);
+  private limiter = new GuildTaskLimiter();
   /** threadId -> running task, used for reply forwarding and /cancel. */
   private active = new Map<string, ActiveTask>();
 
@@ -108,6 +111,7 @@ export class TaskOrchestrator {
       mode: params.mode,
       prompt: params.prompt,
       requestedBy: params.requestedBy,
+      fundedBy: params.fundedBy ?? "plan",
     });
 
     // Registered before acquiring a slot so /cancel works even while queued.
@@ -115,16 +119,23 @@ export class TaskOrchestrator {
       taskId,
       guildId: params.guildId,
       mode: params.mode,
+      fundedBy: params.fundedBy ?? "plan",
       handle: null,
       terminalReason: null,
       llmSource: null,
     };
     this.active.set(params.thread.id, task);
 
-    const slot = await this.limiter.acquire(params.guildId);
-    if (slot.queued) {
-      await params.thread.send("⏳ Queued behind another task in this server…");
+    const guildRow = await this.db.query.guilds.findFirst({
+      where: eq(schema.guilds.id, params.guildId),
+    });
+    const limit = guildRow?.concurrency ?? 1;
+    if (this.limiter.runningCount(params.guildId) >= limit) {
+      await params.thread.send(
+        `⏳ Queued — ${this.limiter.runningCount(params.guildId)}/${limit} task slots in use…`,
+      );
     }
+    await this.limiter.acquire(params.guildId, limit);
 
     try {
       if (task.terminalReason === "cancel") {
@@ -197,12 +208,21 @@ export class TaskOrchestrator {
       .set({ status: "running", containerId: handle.id })
       .where(eq(schema.tasks.id, taskId));
 
+    // Platform-key (trial) tasks get the tighter wall clock — bounds the cost
+    // of trial farming alongside the egress allowlist.
+    const timeoutMinutes =
+      task.llmSource === "platform"
+        ? Math.min(
+            this.config.TASK_TIMEOUT_MINUTES,
+            this.config.TRIAL_TASK_TIMEOUT_MINUTES,
+          )
+        : this.config.TASK_TIMEOUT_MINUTES;
     const timeout = setTimeout(
       () => {
         task.terminalReason = "timeout";
         void handle.kill();
       },
-      this.config.TASK_TIMEOUT_MINUTES * 60 * 1000,
+      timeoutMinutes * 60 * 1000,
     );
 
     const progressMessage = await thread.send({
@@ -345,7 +365,8 @@ export class TaskOrchestrator {
       .update(schema.tasks)
       .set({ status, finishedAt: new Date() })
       .where(eq(schema.tasks.id, task.taskId));
-    if (status !== "done") await refundUsage(this.db, task.guildId, task.mode);
+    if (status !== "done")
+      await refundUsage(this.db, task.guildId, task.mode, task.fundedBy);
   }
 }
 

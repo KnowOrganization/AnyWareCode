@@ -9,12 +9,12 @@ import {
   type IntentDecision,
 } from "../llm/chat.js";
 import { resolveLlmAuth } from "../llm/credentials.js";
-import { allowPlatformKey, canInvoke, capState, ensureGuild } from "./gates.js";
+import { canInvoke, capState, ensureGuild } from "./gates.js";
 import type { BotContext } from "./interactions.js";
 import {
+  assertLlmUsable,
   checkTaskPreconditions,
   launchTask,
-  trialEndedMessage,
   truncate,
 } from "./launch.js";
 import { createProposal, proposalMessage } from "./proposals.js";
@@ -120,9 +120,11 @@ export async function handleMention(
     );
     return;
   }
-  // Post-trial guilds can't ride the platform key, even for a chat reply.
-  if (llm.source === "platform" && !allowPlatformKey(guild)) {
-    await reply(message, trialEndedMessage(ctx));
+  // Same credential gating as task launches: trial rules (platform key, abuse
+  // gates, org dedup) and the claude_oauth kill switch.
+  const usable = await assertLlmUsable(ctx, guild, llm);
+  if (!usable.ok) {
+    await reply(message, usable.reason);
     return;
   }
 

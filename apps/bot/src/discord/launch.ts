@@ -9,12 +9,15 @@ import { eq } from "drizzle-orm";
 import type { TranscriptEntry } from "@anywherecode/shared";
 import { schema } from "@anywherecode/db";
 import type { Guild } from "@anywherecode/db";
+import { getOrgTrial } from "@anywherecode/db";
+import { isClaudeOauthEnabled } from "../flags.js";
 import { createInstallState } from "../github/install-state.js";
-import { resolveLlmAuth } from "../llm/credentials.js";
+import { resolveLlmAuth, type ResolvedLlmAuth } from "../llm/credentials.js";
 import { captureError } from "../observability.js";
 import { bumpUsage } from "../orchestrator/usage.js";
 import { allowPlatformKey, canInvoke, capState } from "./gates.js";
 import type { BotContext } from "./interactions.js";
+import { checkTrialGates } from "./trial-gates.js";
 
 /**
  * Shared task-launch path. All entry points (slash commands, the Iterate
@@ -36,6 +39,12 @@ export async function checkTaskPreconditions(
 ): Promise<PreconditionResult> {
   if (!member) {
     return { ok: false, reason: "Couldn't resolve your server membership; try again." };
+  }
+  if (guild.suspended) {
+    return {
+      ok: false,
+      reason: "This server's access has been suspended. Contact the operator.",
+    };
   }
   if (prompt.trim().length === 0) {
     return { ok: false, reason: "Give me something to work on — the task is empty." };
@@ -69,10 +78,8 @@ export async function checkTaskPreconditions(
   if (!llmRes.auth) {
     return { ok: false, reason: "LLM not connected. An admin needs to run `/connect llm`." };
   }
-  // The platform key is a trial convenience only; paid + post-trial tiers must BYO.
-  if (llmRes.source === "platform" && !allowPlatformKey(guild)) {
-    return { ok: false, reason: trialEndedMessage(ctx) };
-  }
+  const usable = await assertLlmUsable(ctx, guild, llmRes);
+  if (!usable.ok) return usable;
   const channelRepo = await ctx.db.query.channelRepos.findFirst({
     where: eq(schema.channelRepos.channelId, repoChannelId),
   });
@@ -84,16 +91,68 @@ export async function checkTaskPreconditions(
   }
   const cap = capState(guild, mode);
   if (cap.exceeded) {
-    return {
-      ok: false,
-      reason: `This server hit its monthly ${mode === "code" ? "task" : "question"} limit (${cap.used}/${cap.cap}). Resets ${guild.capResetAt.toDateString()}.`,
-    };
+    return { ok: false, reason: capExceededMessage(ctx, guild, mode, cap) };
   }
   return {
     ok: true,
     repoFullName: channelRepo.repoFullName,
     installationId: guild.githubInstallationId,
   };
+}
+
+/**
+ * Shared credential gating used by the launch funnel and the mention handler:
+ * platform-key trial rules (tier + abuse gates + one-trial-per-org) and the
+ * claude_oauth kill switch.
+ */
+export async function assertLlmUsable(
+  ctx: BotContext,
+  guild: Guild,
+  resolved: ResolvedLlmAuth,
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  if (!resolved.auth) {
+    return { ok: false, reason: "LLM not connected. An admin needs to run `/connect llm`." };
+  }
+  if (
+    resolved.auth.type === "claude_oauth" &&
+    !(await isClaudeOauthEnabled(ctx.db))
+  ) {
+    return {
+      ok: false,
+      reason:
+        "Subscription-token connections are currently disabled. An admin should run `/connect llm` and switch to an Anthropic API key.",
+    };
+  }
+  if (resolved.source !== "platform") return { ok: true };
+  // The platform key is a trial convenience only; paid + post-trial tiers must BYO.
+  if (!allowPlatformKey(guild)) {
+    return { ok: false, reason: trialEndedMessage(ctx) };
+  }
+  const gates = await checkTrialGates(ctx.client, ctx.db, ctx.config, guild);
+  if (!gates.ok) return gates;
+  if (guild.githubAccountLogin) {
+    const orgTrial = await getOrgTrial(ctx.db, guild.githubAccountLogin);
+    if (orgTrial && orgTrial.guildId !== guild.id) {
+      return {
+        ok: false,
+        reason:
+          "This GitHub org already used its free trial in another server. Connect your own LLM key with `/connect llm` or pick a plan.",
+      };
+    }
+  }
+  return { ok: true };
+}
+
+/** Cap-hit copy; the growth hook is that any member can buy a pack. */
+export function capExceededMessage(
+  ctx: BotContext,
+  guild: Guild,
+  mode: "code" | "ask",
+  cap: { used: number; cap: number },
+): string {
+  const base = `This server hit its monthly ${mode === "code" ? "task" : "question"} limit (${cap.used}/${cap.cap}). Resets ${guild.capResetAt.toDateString()}.`;
+  if (mode !== "code" || !ctx.config.WEB_URL) return base;
+  return `${base}\nAny member can add more — buy a task pack at ${ctx.config.WEB_URL}/packs/${guild.id}, or upgrade at ${ctx.config.WEB_URL}/dashboard/${guild.id}.`;
 }
 
 export type ThreadStrategy =
@@ -142,7 +201,7 @@ export async function launchTask(
     thread = (await client.channels.fetch(threadRaw.id)) as ThreadChannel;
   }
 
-  await bumpUsage(ctx.db, req.guildId, req.mode);
+  const fundedBy = await bumpUsage(ctx.db, req.guildId, req.mode);
   void ctx.orchestrator
     .run({
       guildId: req.guildId,
@@ -153,6 +212,7 @@ export async function launchTask(
       prompt: req.prompt,
       requestedBy: req.requestedBy,
       mode: req.mode,
+      fundedBy,
       ...(req.iterate ? { iterate: req.iterate } : {}),
     })
     .catch(async (err: unknown) => {

@@ -1,6 +1,6 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { eq, inArray } from "drizzle-orm";
+import { eq, inArray, isNull, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
 import * as schema from "./schema.js";
@@ -34,6 +34,21 @@ export async function deleteGuildData(db: Db, guildId: string): Promise<void> {
   await db
     .delete(schema.setupStates)
     .where(eq(schema.setupStates.guildId, guildId));
+  await db
+    .delete(schema.taskPackPurchases)
+    .where(eq(schema.taskPackPurchases.guildId, guildId));
+  await db
+    .delete(schema.repoSettings)
+    .where(eq(schema.repoSettings.guildId, guildId));
+  await db.delete(schema.schedules).where(eq(schema.schedules.guildId, guildId));
+  await db
+    .delete(schema.serverMemories)
+    .where(eq(schema.serverMemories.guildId, guildId));
+  await db
+    .delete(schema.memorySuggestions)
+    .where(eq(schema.memorySuggestions.guildId, guildId));
+  // github_org_trials intentionally survives guild deletion: the org's trial
+  // is consumed forever (re-adding the bot must not grant a fresh trial).
   await db.delete(schema.guilds).where(eq(schema.guilds.id, guildId));
 }
 
@@ -57,6 +72,7 @@ export async function applyGuildSubscription(
     subStatus: "active" | "past_due" | "canceled" | "free";
     planId?: string | null;
     taskCap?: number;
+    concurrency?: number;
     currentPeriodEnd?: Date | null;
   },
 ): Promise<void> {
@@ -64,6 +80,151 @@ export async function applyGuildSubscription(
     .update(schema.guilds)
     .set(patch)
     .where(eq(schema.guilds.id, guildId));
+}
+
+// --- Task packs ---
+
+/**
+ * Credit a task-pack purchase. Idempotent on the Stripe checkout session id:
+ * a webhook retry/replay inserts nothing and credits nothing. Returns whether
+ * this call actually credited the balance.
+ */
+export async function recordTaskPackPurchase(
+  db: Db,
+  row: {
+    id: string;
+    guildId: string;
+    purchasedBy: string;
+    purchaserName: string;
+    tasks: number;
+    amountCents: number;
+    stripeCheckoutSessionId: string;
+  },
+): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    const inserted = await tx
+      .insert(schema.taskPackPurchases)
+      .values(row)
+      .onConflictDoNothing({
+        target: schema.taskPackPurchases.stripeCheckoutSessionId,
+      })
+      .returning({ id: schema.taskPackPurchases.id });
+    if (inserted.length === 0) return false;
+    await tx
+      .update(schema.guilds)
+      .set({
+        packTasksRemaining: sql`${schema.guilds.packTasksRemaining} + ${row.tasks}`,
+      })
+      .where(eq(schema.guilds.id, row.guildId));
+    return true;
+  });
+}
+
+export async function listUnannouncedPackPurchases(db: Db) {
+  return db.query.taskPackPurchases.findMany({
+    where: isNull(schema.taskPackPurchases.announcedAt),
+  });
+}
+
+export async function markPackPurchaseAnnounced(
+  db: Db,
+  id: string,
+): Promise<void> {
+  await db
+    .update(schema.taskPackPurchases)
+    .set({ announcedAt: new Date() })
+    .where(eq(schema.taskPackPurchases.id, id));
+}
+
+// --- App settings (runtime flags) ---
+
+export async function getSetting(db: Db, key: string): Promise<unknown> {
+  const row = await db.query.appSettings.findFirst({
+    where: eq(schema.appSettings.key, key),
+  });
+  return row?.value;
+}
+
+export async function setSetting(
+  db: Db,
+  key: string,
+  value: unknown,
+): Promise<void> {
+  await db
+    .insert(schema.appSettings)
+    .values({ key, value, updatedAt: new Date() })
+    .onConflictDoUpdate({
+      target: schema.appSettings.key,
+      set: { value, updatedAt: new Date() },
+    });
+}
+
+// --- GitHub org trials ---
+
+/**
+ * Claim the platform-key trial for a GitHub org/user login. First guild wins;
+ * returns the owning row either way.
+ */
+export async function claimOrgTrial(db: Db, orgLogin: string, guildId: string) {
+  const key = orgLogin.toLowerCase();
+  await db
+    .insert(schema.githubOrgTrials)
+    .values({ orgLogin: key, guildId })
+    .onConflictDoNothing();
+  const row = await db.query.githubOrgTrials.findFirst({
+    where: eq(schema.githubOrgTrials.orgLogin, key),
+  });
+  if (!row) throw new Error(`org trial row for ${key} vanished after upsert`);
+  return row;
+}
+
+export async function getOrgTrial(db: Db, orgLogin: string) {
+  return (
+    (await db.query.githubOrgTrials.findFirst({
+      where: eq(schema.githubOrgTrials.orgLogin, orgLogin.toLowerCase()),
+    })) ?? null
+  );
+}
+
+// --- OSS Community tier admin ---
+
+export async function listPendingOssApplications(db: Db) {
+  return db.query.guilds.findMany({
+    where: eq(schema.guilds.ossStatus, "pending"),
+  });
+}
+
+/**
+ * Apply an operator's OSS decision. Approval grants the oss plan row's
+ * entitlements; rejection just records the status.
+ */
+export async function applyOssDecision(
+  db: Db,
+  guildId: string,
+  approved: boolean,
+  ossPlan: { id: string; taskCap: number; concurrency: number },
+): Promise<void> {
+  await db
+    .update(schema.guilds)
+    .set(
+      approved
+        ? {
+            ossStatus: "approved",
+            ossReviewedAt: new Date(),
+            planId: ossPlan.id,
+            taskCap: ossPlan.taskCap,
+            concurrency: ossPlan.concurrency,
+            subStatus: "free",
+          }
+        : { ossStatus: "rejected", ossReviewedAt: new Date() },
+    )
+    .where(eq(schema.guilds.id, guildId));
+}
+
+export async function getPlan(db: Db, id: string) {
+  return (
+    (await db.query.plans.findFirst({ where: eq(schema.plans.id, id) })) ?? null
+  );
 }
 
 /** Find the guild a Stripe customer belongs to. */
@@ -126,4 +287,9 @@ export type {
   Proposal,
   Plan,
   SubStatus,
+  TaskPackPurchase,
+  RepoSettings,
+  Schedule,
+  ServerMemory,
+  MemorySuggestion,
 } from "./schema.js";
