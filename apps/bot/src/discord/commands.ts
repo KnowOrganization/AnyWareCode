@@ -9,6 +9,14 @@ export const commands = [
         .setName("task")
         .setDescription("What should the agent do?")
         .setRequired(true),
+    )
+    .addIntegerOption((opt) =>
+      opt
+        .setName("squad")
+        .setDescription("Squad Mode: N parallel attempts, the server votes (burns N tasks)")
+        .setMinValue(2)
+        .setMaxValue(5)
+        .setRequired(false),
     ),
   new SlashCommandBuilder()
     .setName("ask")

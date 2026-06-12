@@ -243,6 +243,10 @@ export interface LaunchTaskRequest {
   summaryTarget?: { channelId: string; title: string };
   /** Quota already claimed by the caller (squad batches via claimUnits). */
   prefundedBy?: FundedBy;
+  /** Caller-supplied task id (squads pre-generate ids to link attempts). */
+  taskId?: string;
+  /** Squad attempts: push the branch but defer PR creation to the vote. */
+  deferPr?: boolean;
 }
 
 export interface LaunchedTask {
@@ -288,6 +292,8 @@ export async function launchTask(
       fundedBy,
       ...(req.requestedById ? { requestedById: req.requestedById } : {}),
       ...(req.planApprovedBy ? { planApprovedBy: req.planApprovedBy } : {}),
+      ...(req.taskId ? { taskId: req.taskId } : {}),
+      ...(req.deferPr ? { deferPr: true } : {}),
       ...(req.iterate ? { iterate: req.iterate } : {}),
       ...(req.transcript ? { transcript: req.transcript } : {}),
       ...(req.checkoutRef ? { checkoutRef: req.checkoutRef } : {}),

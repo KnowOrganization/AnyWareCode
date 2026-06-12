@@ -136,6 +136,18 @@ export class GitHubService {
     return { number: data.number, url: data.html_url };
   }
 
+  /** Delete a branch (squad losers / expired squads). Throws on failure —
+   * callers treat cleanup as best-effort. */
+  async deleteRef(
+    installationId: number,
+    repoFullName: string,
+    branch: string,
+  ): Promise<void> {
+    const [owner, repo] = splitRepo(repoFullName);
+    const client = await this.installationClient(installationId);
+    await client.rest.git.deleteRef({ owner, repo, ref: `heads/${branch}` });
+  }
+
   async mergePullRequest(
     installationId: number,
     repoFullName: string,

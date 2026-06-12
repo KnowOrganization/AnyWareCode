@@ -33,6 +33,7 @@ import { handlePlanVoteButton, maybeRequirePlanVote } from "./plan-votes.js";
 import { handleProposalButton, setProposalMessageId } from "./proposals.js";
 import { handleReviewCommand } from "./review.js";
 import { handleScheduleCommand } from "./schedule.js";
+import { handleSquadButton, launchSquad, squadAllowed } from "./squad.js";
 import { handleStandupCommand } from "../voice/standup.js";
 import { postShipLog } from "./shiplog.js";
 import { welcomeMessage } from "./welcome.js";
@@ -160,6 +161,25 @@ async function startAgentTask(
     return;
   }
 
+  const squadN =
+    mode === "code" ? interaction.options.getInteger("squad") : null;
+  if (squadN !== null && squadN !== undefined) {
+    const tier = resolveTier(guild);
+    if (
+      squadN > ctx.config.SQUAD_MAX ||
+      !(await squadAllowed(ctx, guildId, guild.planId, tier.kind))
+    ) {
+      await interaction.reply({
+        content:
+          squadN > ctx.config.SQUAD_MAX
+            ? `Squads cap at ${ctx.config.SQUAD_MAX} attempts on this bot.`
+            : "Squad Mode needs a plan with the feature (Studio). See `/billing`.",
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+  }
+
   if (mode === "code") {
     const decision = await maybeRequirePlanVote(ctx, {
       guild,
@@ -167,7 +187,11 @@ async function startAgentTask(
       repoFullName: pre.repoFullName,
       channelId: interaction.channelId,
       prompt,
-      summary: truncate(prompt.split("\n")[0] ?? prompt, 80),
+      // The squad marker survives into the proposal so approval re-launches
+      // the full squad, not a single task (parsed in approvePlanProposal).
+      summary: squadN
+        ? `⚔️ Squad ×${squadN}: ${truncate(prompt.split("\n")[0] ?? prompt, 60)}`
+        : truncate(prompt.split("\n")[0] ?? prompt, 80),
     });
     if (decision.kind === "vote") {
       await interaction.reply({
@@ -179,6 +203,29 @@ async function startAgentTask(
       await setProposalMessageId(ctx.db, decision.proposalId, card.id);
       return;
     }
+  }
+
+  if (squadN) {
+    await interaction.reply(
+      `⚔️ **${pre.repoFullName}** — squad ×${squadN}: ${truncate(prompt, 140)}`,
+    );
+    const result = await launchSquad(ctx, {
+      guildId,
+      installationId: pre.installationId,
+      repoFullName: pre.repoFullName,
+      channelId: interaction.channelId,
+      prompt,
+      n: squadN,
+      requestedBy: interaction.user.username,
+      requestedById: interaction.user.id,
+    });
+    if (!result.ok) {
+      await interaction.followUp({
+        content: result.reason,
+        flags: MessageFlags.Ephemeral,
+      });
+    }
+    return;
   }
 
   const emoji = mode === "code" ? "🧵" : "💬";
@@ -566,6 +613,17 @@ async function handleButton(
   if (action === "llm") {
     const subAction = parts[2] ?? "";
     await handleLlmButton(ctx, interaction, subAction);
+    return;
+  }
+
+  // Squad vote cards carry a squadId (+ attempt index for Ship)
+  if (action === "squad") {
+    const sub = parts[2];
+    const squadId = parts[3];
+    if ((sub !== "ship" && sub !== "scrap") || !squadId) return;
+    const idx = sub === "ship" ? Number.parseInt(parts[4] ?? "", 10) : null;
+    if (sub === "ship" && (idx === null || Number.isNaN(idx))) return;
+    await handleSquadButton(ctx, interaction, sub, squadId, idx);
     return;
   }
 

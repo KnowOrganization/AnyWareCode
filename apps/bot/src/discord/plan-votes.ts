@@ -18,6 +18,7 @@ import { canInvoke, ensureGuild } from "./gates.js";
 import type { BotContext } from "./interactions.js";
 import { launchTask, truncate } from "./launch.js";
 import { createProposal, setProposalMessageId } from "./proposals.js";
+import { launchSquad } from "./squad.js";
 
 /**
  * Plan votes: before burning a code task, the agent's plan goes up as a card
@@ -150,6 +151,22 @@ export async function approvePlanProposal(
   const guild = await ensureGuild(ctx.db, proposal.guildId, ctx.config);
   if (!guild.githubInstallationId || !proposal.messageId) {
     return { ok: false, reason: "This plan can't launch anymore (setup changed)." };
+  }
+  // A squad-flagged plan re-launches the full squad, not a single task.
+  const squadMatch = /^⚔️ Squad ×(\d)/.exec(proposal.summary);
+  if (squadMatch) {
+    const result = await launchSquad(ctx, {
+      guildId: proposal.guildId,
+      installationId: guild.githubInstallationId,
+      repoFullName: proposal.repoFullName,
+      channelId: proposal.channelId,
+      prompt: proposal.prompt,
+      n: Number.parseInt(squadMatch[1] ?? "2", 10),
+      requestedBy: approver.username,
+      requestedById: approver.id,
+      planApprovedBy: approver.username,
+    });
+    return result.ok ? { ok: true } : { ok: false, reason: result.reason };
   }
   await launchTask(ctx, {
     guildId: proposal.guildId,

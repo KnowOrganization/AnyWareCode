@@ -27,6 +27,10 @@ import { refundUsage, type FundedBy } from "./usage.js";
 import type { Workspace, WorkspaceHandle } from "./workspace.js";
 
 export interface StartTaskParams {
+  /** Caller-supplied id (squads pre-generate ids to link attempts in DB). */
+  taskId?: string;
+  /** Squad attempts: push the branch but defer PR creation to the vote. */
+  deferPr?: boolean;
   guildId: string;
   installationId: number;
   channelId: string;
@@ -123,7 +127,10 @@ export class TaskOrchestrator {
 
   /** Runs a task to completion; resolves with what the run produced. */
   async run(params: StartTaskParams): Promise<RunOutcome> {
-    const taskId = randomUUID().slice(0, 8);
+    if (params.deferPr && params.iterate) {
+      throw new Error("deferPr and iterate are mutually exclusive");
+    }
+    const taskId = params.taskId ?? randomUUID().slice(0, 8);
     const branch = params.iterate?.branch ?? taskBranchName(taskId);
     const baseBranch = await this.github.defaultBranch(
       params.installationId,
@@ -417,6 +424,32 @@ export class TaskOrchestrator {
         }
       }
       return out("done", { summary, diffFiles });
+    }
+
+    // Squad attempt: the branch is the deliverable — the PR waits for the vote.
+    if (params.deferPr) {
+      if (!pushed) {
+        // Nothing to vote on shouldn't consume a unit.
+        await this.settle(task, "failed");
+        await thread.send(
+          "🏳️ This attempt produced no changes — its task unit was refunded.",
+        );
+        return out("failed", { summary });
+      }
+      await this.db
+        .update(schema.tasks)
+        .set({
+          status: "done",
+          diffSummary: diffFiles,
+          finishedAt: new Date(),
+        })
+        .where(eq(schema.tasks.id, taskId));
+      const add = diffFiles.reduce((n, f) => n + f.additions, 0);
+      const del = diffFiles.reduce((n, f) => n + f.deletions, 0);
+      await thread.send(
+        `🏁 Attempt finished — \`${branch}\` (${diffFiles.length} file(s), +${add} −${del}). The squad vote decides whether it ships.`,
+      );
+      return out("done", { pushed: true, summary, diffFiles });
     }
 
     if (!pushed) {

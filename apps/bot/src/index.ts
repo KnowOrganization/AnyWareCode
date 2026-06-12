@@ -25,6 +25,7 @@ import {
 } from "./discord/mentions.js";
 import { startPackAnnouncer } from "./discord/pack-announcer.js";
 import { sweepExpiredProposals } from "./discord/proposals.js";
+import { startSquadSweeper, sweepSquads } from "./discord/squad.js";
 import { registerCommands } from "./discord/register.js";
 import { findAnnounceChannel, welcomeMessage } from "./discord/welcome.js";
 import { GitHubService } from "./github/app.js";
@@ -95,6 +96,9 @@ client.on(Events.ClientReady, async (ready) => {
   await pruneWebhookDeliveries(db);
   startPackAnnouncer(db, client);
   startScheduler(ctx);
+  // After recovery has settled stale attempts, finalize any orphaned squads.
+  await sweepSquads(ctx);
+  startSquadSweeper(ctx);
 });
 
 // Bot removed from a server: erase the guild's data (privacy + housekeeping).
