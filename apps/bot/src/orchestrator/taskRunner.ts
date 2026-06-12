@@ -51,6 +51,8 @@ interface ActiveTask {
   fundedBy: FundedBy;
   /** Forwarded thread replies — fuel for post-task memory suggestions. */
   corrections: Array<{ author: string; text: string }>;
+  /** Live progress renderer; the Spectate button flips it verbose. */
+  renderer: ProgressRenderer | null;
   /** Null until the container starts (e.g. while queued behind another task). */
   handle: WorkspaceHandle | null;
   /** Set when the task is being stopped, so the run loop reports it correctly. */
@@ -125,6 +127,7 @@ export class TaskOrchestrator {
       mode: params.mode,
       fundedBy: params.fundedBy ?? "plan",
       corrections: [],
+      renderer: null,
       handle: null,
       terminalReason: null,
       llmSource: null,
@@ -240,8 +243,17 @@ export class TaskOrchestrator {
 
     const progressMessage = await thread.send({
       embeds: [progressEmbed("🧠 Starting…")],
+      components: [
+        new ActionRowBuilder<ButtonBuilder>().addComponents(
+          new ButtonBuilder()
+            .setCustomId(`aw:spectate:${taskId}`)
+            .setLabel("Spectate 👁")
+            .setStyle(ButtonStyle.Secondary),
+        ),
+      ],
     });
     const renderer = new ProgressRenderer();
+    task.renderer = renderer;
     const updater = new ThrottledUpdater(async () => {
       await progressMessage.edit({ embeds: [progressEmbed(renderer.render())] });
     });
@@ -249,6 +261,8 @@ export class TaskOrchestrator {
     let pushed = false;
     let errorMessage: string | null = null;
     let summary: string | undefined;
+    let diffFiles: Array<{ path: string; additions: number; deletions: number }> =
+      [];
 
     try {
       for await (const event of handle.events) {
@@ -259,6 +273,7 @@ export class TaskOrchestrator {
           continue;
         }
         if (event.type === "pushed") pushed = true;
+        if (event.type === "diff_summary") diffFiles = event.files;
         if (event.type === "error") errorMessage = event.message;
         if (event.type === "done") summary = event.summary;
         if (renderer.add(event)) updater.schedule();
@@ -266,6 +281,8 @@ export class TaskOrchestrator {
     } finally {
       clearTimeout(timeout);
       await updater.flush();
+      // Run over — retire the Spectate button.
+      await progressMessage.edit({ components: [] }).catch(() => {});
     }
 
     const stopped = this.reasonOf(task);
@@ -365,6 +382,12 @@ export class TaskOrchestrator {
       ],
     });
 
+    if (diffFiles.length > 0) {
+      await thread
+        .send({ embeds: [whatChangedEmbed(diffFiles)] })
+        .catch(() => {});
+    }
+
     // Corrections happened mid-run → offer to save them as Server Memory.
     void maybeSuggestMemory(
       { db: this.db, config: this.config },
@@ -376,6 +399,14 @@ export class TaskOrchestrator {
         thread,
       },
     ).catch((err) => log.warn({ err }, "memory suggestion failed"));
+  }
+
+  /** Spectate: verbose progress for everyone watching the thread. One-way. */
+  enableSpectate(taskId: string): boolean {
+    const task = [...this.active.values()].find((t) => t.taskId === taskId);
+    if (!task?.renderer) return false;
+    task.renderer.enableVerbose();
+    return true;
   }
 
   private reasonOf(task: ActiveTask): TerminalReason | null {
@@ -397,6 +428,29 @@ export class TaskOrchestrator {
 
 function progressEmbed(description: string): EmbedBuilder {
   return new EmbedBuilder().setColor(0x5865f2).setDescription(description);
+}
+
+const MAX_DIFF_FILES = 20;
+
+export function whatChangedEmbed(
+  files: Array<{ path: string; additions: number; deletions: number }>,
+): EmbedBuilder {
+  const shown = files.slice(0, MAX_DIFF_FILES);
+  const lines = shown.map(
+    (f) => `\`${f.path}\` **+${f.additions}** −${f.deletions}`,
+  );
+  if (files.length > MAX_DIFF_FILES) {
+    lines.push(`…and ${files.length - MAX_DIFF_FILES} more file(s)`);
+  }
+  const totalAdd = files.reduce((n, f) => n + f.additions, 0);
+  const totalDel = files.reduce((n, f) => n + f.deletions, 0);
+  return new EmbedBuilder()
+    .setColor(0x57f287)
+    .setTitle("What changed")
+    .setDescription(lines.join("\n").slice(0, 4000))
+    .setFooter({
+      text: `${files.length} file(s), +${totalAdd} −${totalDel}`,
+    });
 }
 
 export function chunkText(text: string, max: number): string[] {

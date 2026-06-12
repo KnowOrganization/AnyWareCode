@@ -1,6 +1,7 @@
 import type { RunnerEvent } from "@anywherecode/shared";
 
 const MAX_LINES = 14;
+const SPECTATE_MAX_LINES = 30;
 const MAX_MESSAGE_LENGTH = 3800; // headroom under Discord's 4096 embed limit
 
 /**
@@ -8,7 +9,10 @@ const MAX_MESSAGE_LENGTH = 3800; // headroom under Discord's 4096 embed limit
  * of the rolling progress display (assistant text and done get their own
  * messages).
  */
-export function renderEventLine(event: RunnerEvent): string | null {
+export function renderEventLine(
+  event: RunnerEvent,
+  verbose = false,
+): string | null {
   switch (event.type) {
     case "plan":
       return `🧠 ${truncate(event.text, 200)}`;
@@ -17,7 +21,7 @@ export function renderEventLine(event: RunnerEvent): string | null {
     case "edit_file":
       return `✏️ Editing ${truncate(event.file, 200)}`;
     case "bash":
-      return `💻 \`${truncate(event.command.replaceAll("`", "'"), 180)}\``;
+      return `💻 \`${truncate(event.command.replaceAll("`", "'"), verbose ? 600 : 180)}\``;
     case "tests":
       return `${event.passed ? "✅" : "❌"} ${truncate(event.summary, 200)}`;
     case "pushed":
@@ -34,19 +38,27 @@ export function renderEventLine(event: RunnerEvent): string | null {
 /** Rolling window of progress lines rendered into a single Discord message. */
 export class ProgressRenderer {
   private lines: string[] = [];
+  private verbose = false;
+
+  /** Spectate mode: more lines, full commands, no read-collapsing. One-way. */
+  enableVerbose(): void {
+    this.verbose = true;
+  }
 
   add(event: RunnerEvent): boolean {
-    const line = renderEventLine(event);
+    const line = renderEventLine(event, this.verbose);
     if (line === null) return false;
-    // Collapse consecutive reads into the latest one to cut message churn.
+    // Collapse consecutive reads into the latest one to cut message churn
+    // (spectators want the full stream instead).
     const last = this.lines.at(-1);
-    if (line.startsWith("📂") && last?.startsWith("📂")) {
+    if (!this.verbose && line.startsWith("📂") && last?.startsWith("📂")) {
       this.lines[this.lines.length - 1] = line;
     } else {
       this.lines.push(line);
     }
-    if (this.lines.length > MAX_LINES) {
-      this.lines.splice(0, this.lines.length - MAX_LINES);
+    const max = this.verbose ? SPECTATE_MAX_LINES : MAX_LINES;
+    if (this.lines.length > max) {
+      this.lines.splice(0, this.lines.length - max);
     }
     return true;
   }

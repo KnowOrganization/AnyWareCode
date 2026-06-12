@@ -40,4 +40,21 @@ describe("ProgressRenderer", () => {
   it("renders a placeholder before any events", () => {
     expect(new ProgressRenderer().render()).toBe("🧠 Starting…");
   });
+
+  it("spectate mode keeps the full read stream and a bigger window", () => {
+    const renderer = new ProgressRenderer();
+    renderer.enableVerbose();
+    renderer.add({ type: "read_files", files: ["a.ts"] });
+    renderer.add({ type: "read_files", files: ["b.ts"] });
+    expect(renderer.render().split("\n")).toEqual([
+      "📂 Reading a.ts",
+      "📂 Reading b.ts",
+    ]);
+
+    for (let i = 0; i < 40; i++) {
+      renderer.add({ type: "edit_file", file: `f${i}.ts` });
+    }
+    expect(renderer.render().split("\n").length).toBeLessThanOrEqual(30);
+    expect(renderer.render().split("\n").length).toBeGreaterThan(14);
+  });
 });

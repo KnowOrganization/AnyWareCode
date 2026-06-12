@@ -14,7 +14,7 @@ import { schema, type Db } from "@anywherecode/db";
 import type { GitHubService } from "../github/app.js";
 import { createInstallState } from "../github/install-state.js";
 import type { TaskOrchestrator } from "../orchestrator/taskRunner.js";
-import { canInvoke, capState, ensureGuild } from "./gates.js";
+import { canInvoke, capState, ensureGuild, resolveTier } from "./gates.js";
 import {
   handleBillingCommand,
   handleConnectCommand,
@@ -385,6 +385,27 @@ async function handleButton(
     interaction.guildId,
     ctx.config,
   );
+
+  // Spectate is open to any thread viewer (read-only) — gated by tier only.
+  if (action === "spectate") {
+    const tier = resolveTier(guild);
+    if (tier.kind !== "paid") {
+      await interaction.reply({
+        content: "Spectate mode needs a Pro or Studio plan. See `/billing`.",
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+    const enabled = ctx.orchestrator.enableSpectate(taskId);
+    await interaction.reply({
+      content: enabled
+        ? "👁 Spectate on — verbose progress for everyone in this thread."
+        : "This task isn't running anymore.",
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
   if (!interaction.member || !canInvoke(guild, interaction.member)) {
     await interaction.reply({
       content: "You don't have permission to do that.",
