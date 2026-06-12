@@ -51,6 +51,17 @@ export interface StartTaskParams {
 
 type TerminalReason = "cancel" | "timeout";
 
+/** What a finished run produced — awaited by Repro Gate and Squad Mode. */
+export interface RunOutcome {
+  taskId: string;
+  status: "done" | "failed" | "cancelled";
+  pushed: boolean;
+  branch: string;
+  prNumber: number | null;
+  summary?: string;
+  diffFiles: Array<{ path: string; additions: number; deletions: number }>;
+}
+
 interface ActiveTask {
   taskId: string;
   guildId: string;
@@ -104,8 +115,8 @@ export class TaskOrchestrator {
     return true;
   }
 
-  /** Runs a task to completion. Returns when the task is finished. */
-  async run(params: StartTaskParams): Promise<void> {
+  /** Runs a task to completion; resolves with what the run produced. */
+  async run(params: StartTaskParams): Promise<RunOutcome> {
     const taskId = randomUUID().slice(0, 8);
     const branch = params.iterate?.branch ?? taskBranchName(taskId);
     const baseBranch = await this.github.defaultBranch(
@@ -156,9 +167,16 @@ export class TaskOrchestrator {
       if (task.terminalReason === "cancel") {
         await this.settle(task, "cancelled");
         await params.thread.send("🛑 Task cancelled before it started.");
-        return;
+        return {
+          taskId,
+          status: "cancelled",
+          pushed: false,
+          branch,
+          prNumber: null,
+          diffFiles: [],
+        };
       }
-      await this.execute(task, branch, baseBranch, params);
+      return await this.execute(task, branch, baseBranch, params);
     } finally {
       this.limiter.release(params.guildId);
       this.active.delete(params.thread.id);
@@ -170,22 +188,37 @@ export class TaskOrchestrator {
     branch: string,
     baseBranch: string,
     params: StartTaskParams,
-  ): Promise<void> {
+  ): Promise<RunOutcome> {
     const { thread } = params;
     const { taskId } = task;
+    const out = (
+      status: RunOutcome["status"],
+      extra: Partial<RunOutcome> = {},
+    ): RunOutcome => ({
+      taskId,
+      status,
+      pushed: false,
+      branch,
+      prNumber: null,
+      diffFiles: [],
+      ...extra,
+    });
 
     // Resolve LLM auth before spending GitHub token quota.
     const resolved = await resolveLlmAuth(this.db, this.config, params.guildId);
     if (!resolved.auth) {
       await this.settle(task, "failed");
       await thread.send(`⚠️ ${resolved.reason}`);
-      return;
+      return out("failed");
     }
     task.llmSource = resolved.source;
 
+    // Ask mode is read-only by contract — its token can't push (defense in
+    // depth for runs that execute untrusted content, e.g. Repro Gate).
     const token = await this.github.mintRepoToken(
       params.installationId,
       params.repoFullName,
+      params.mode === "code",
     );
     // Server Memory: trusted per-repo conventions, injected into every run.
     const memoryRow = await this.db.query.serverMemories.findFirst({
@@ -229,7 +262,7 @@ export class TaskOrchestrator {
       await handle.kill();
       await this.settle(task, "cancelled");
       await thread.send("🛑 Task cancelled.");
-      return;
+      return out("cancelled");
     }
     await this.db
       .update(schema.tasks)
@@ -301,14 +334,14 @@ export class TaskOrchestrator {
     if (stopped === "cancel") {
       await this.settle(task, "cancelled");
       await thread.send("🛑 Task cancelled.");
-      return;
+      return out("cancelled");
     }
     if (stopped === "timeout") {
       await this.settle(task, "failed");
       await thread.send(
         "⏱️ Task hit the time limit and was stopped. Nothing was pushed.",
       );
-      return;
+      return out("failed");
     }
 
     if (errorMessage) {
@@ -327,7 +360,7 @@ export class TaskOrchestrator {
           `⚠️ Task failed: ${truncateForDiscord(errorMessage)}`,
         );
       }
-      return;
+      return out("failed");
     }
 
     if (params.mode === "ask") {
@@ -354,7 +387,7 @@ export class TaskOrchestrator {
             );
         }
       }
-      return;
+      return out("done", { summary, diffFiles });
     }
 
     if (!pushed) {
@@ -364,7 +397,7 @@ export class TaskOrchestrator {
           ? `ℹ️ No changes were pushed. ${truncateForDiscord(summary)}`
           : "ℹ️ The agent finished without making changes.",
       );
-      return;
+      return out("done", { summary });
     }
 
     let prNumber: number;
@@ -423,6 +456,8 @@ export class TaskOrchestrator {
         thread,
       },
     ).catch((err) => log.warn({ err }, "memory suggestion failed"));
+
+    return out("done", { pushed: true, prNumber, summary, diffFiles });
   }
 
   /** Spectate: verbose progress for everyone watching the thread. One-way. */

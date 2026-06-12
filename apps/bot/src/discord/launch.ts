@@ -14,7 +14,8 @@ import { isClaudeOauthEnabled } from "../flags.js";
 import { createInstallState } from "../github/install-state.js";
 import { resolveLlmAuth, type ResolvedLlmAuth } from "../llm/credentials.js";
 import { captureError } from "../observability.js";
-import { bumpUsage } from "../orchestrator/usage.js";
+import type { RunOutcome } from "../orchestrator/taskRunner.js";
+import { bumpUsage, type FundedBy } from "../orchestrator/usage.js";
 import { allowPlatformKey, canInvoke, capState, resolveTier } from "./gates.js";
 import type { BotContext } from "./interactions.js";
 import { checkTrialGates } from "./trial-gates.js";
@@ -219,12 +220,20 @@ export interface LaunchTaskRequest {
   checkoutRef?: string;
   /** Ask mode only: also post the final summary as an embed to this channel. */
   summaryTarget?: { channelId: string; title: string };
+  /** Quota already claimed by the caller (squad batches via claimUnits). */
+  prefundedBy?: FundedBy;
+}
+
+export interface LaunchedTask {
+  thread: ThreadChannel;
+  /** Resolves when the run finishes; never rejects (crash → failed outcome). */
+  outcome: Promise<RunOutcome>;
 }
 
 export async function launchTask(
   ctx: BotContext,
   req: LaunchTaskRequest,
-): Promise<ThreadChannel> {
+): Promise<LaunchedTask> {
   let thread: ThreadChannel;
   if (req.thread.kind === "existing") {
     thread = req.thread.thread;
@@ -243,8 +252,9 @@ export async function launchTask(
     thread = (await client.channels.fetch(threadRaw.id)) as ThreadChannel;
   }
 
-  const fundedBy = await bumpUsage(ctx.db, req.guildId, req.mode);
-  void ctx.orchestrator
+  const fundedBy =
+    req.prefundedBy ?? (await bumpUsage(ctx.db, req.guildId, req.mode));
+  const outcome = ctx.orchestrator
     .run({
       guildId: req.guildId,
       installationId: req.installationId,
@@ -260,13 +270,21 @@ export async function launchTask(
       ...(req.checkoutRef ? { checkoutRef: req.checkoutRef } : {}),
       ...(req.summaryTarget ? { summaryTarget: req.summaryTarget } : {}),
     })
-    .catch(async (err: unknown) => {
+    .catch(async (err: unknown): Promise<RunOutcome> => {
       captureError(err, { msg: "task crashed", threadId: thread.id });
       await thread
         .send("⚠️ The task crashed before finishing. Check the bot logs.")
         .catch(() => {});
+      return {
+        taskId: "crashed",
+        status: "failed",
+        pushed: false,
+        branch: "",
+        prNumber: null,
+        diffFiles: [],
+      };
     });
-  return thread;
+  return { thread, outcome };
 }
 
 export function truncate(text: string, max: number): string {

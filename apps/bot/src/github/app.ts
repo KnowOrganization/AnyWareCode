@@ -49,16 +49,22 @@ export class GitHubService {
     }
   }
 
-  /** Short-lived token scoped to a single repo, for the runner's git ops. */
+  /**
+   * Short-lived token scoped to a single repo, for the runner's git ops.
+   * Ask-mode runs (Q&A, review, repro) get a read-only token — they execute
+   * untrusted content, and "ask mode never pushes" must hold even if the
+   * agent inside the sandbox is hijacked.
+   */
   async mintRepoToken(
     installationId: number,
     repoFullName: string,
+    write: boolean,
   ): Promise<string> {
     const [, repo] = splitRepo(repoFullName);
     const { data } = await this.app.octokit.rest.apps.createInstallationAccessToken({
       installation_id: installationId,
       repositories: [repo],
-      permissions: { contents: "write", metadata: "read" },
+      permissions: { contents: write ? "write" : "read", metadata: "read" },
     });
     return data.token;
   }

@@ -1,20 +1,16 @@
 {
   "../../../node_modules/.pnpm/@react-three+drei@10.7.7_@react-three+fiber@9.6.1_@types+react@19.2.17_react-dom@19.2.7_53d034e53d2dc2d936de176917e96a56/node_modules/@react-three/drei/core/VideoTexture.js -> hls.js": {
-    "id": null,
+    "id": "../../../node_modules/.pnpm/@react-three+drei@10.7.7_@react-three+fiber@9.6.1_@types+react@19.2.17_react-dom@19.2.7_53d034e53d2dc2d936de176917e96a56/node_modules/@react-three/drei/core/VideoTexture.js -> hls.js",
     "files": []
   },
   "../../../node_modules/.pnpm/@react-three+drei@10.7.7_@react-three+fiber@9.6.1_@types+react@19.2.17_react-dom@19.2.7_53d034e53d2dc2d936de176917e96a56/node_modules/@react-three/drei/web/FaceLandmarker.js -> @mediapipe/tasks-vision": {
-    "id": null,
+    "id": "../../../node_modules/.pnpm/@react-three+drei@10.7.7_@react-three+fiber@9.6.1_@types+react@19.2.17_react-dom@19.2.7_53d034e53d2dc2d936de176917e96a56/node_modules/@react-three/drei/web/FaceLandmarker.js -> @mediapipe/tasks-vision",
     "files": []
   },
   "components/three/ScrollScene.tsx -> ./scene": {
-    "id": 7426,
+    "id": "components/three/ScrollScene.tsx -> ./scene",
     "files": [
-      "static/chunks/166d7eef.c1b852e1887f65a2.js",
-      "static/chunks/04ba8493.75a4b8bd57989c26.js",
-      "static/chunks/238a0e66.6c0b31d5a8cf4408.js",
-      "static/chunks/925.3b08c00a5c6488ff.js",
-      "static/chunks/426.f8d13c2c829f6de7.js"
+      "static/chunks/_app-pages-browser_src_components_three_scene_tsx.js"
     ]
   }
 }

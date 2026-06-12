@@ -1,38 +1,87 @@
 import { describe, expect, it, vi } from "vitest";
 import { recordTaskPackPurchase } from "@anywherecode/db";
-import { bumpUsage, refundUsage } from "./usage.js";
+import { bumpUsage, claimUnits, refundUsage } from "./usage.js";
 
-/** Drizzle-shaped update mock; records each set() payload, returning() pops
- * from the supplied claim-result queue. */
-function mockDb(claims: Array<Array<{ id: string }>> = []) {
+/**
+ * Drizzle-shaped mock covering both surfaces: update().set().where() chains
+ * (recorded in `sets`) and the claimUnits transaction (select…for("update")
+ * resolving the supplied guild counters).
+ */
+function mockDb(
+  guild: {
+    taskCap: number;
+    tasksUsedThisMonth: number;
+    packTasksRemaining: number;
+  } | null = null,
+) {
   const sets: Record<string, unknown>[] = [];
   const update = vi.fn(() => ({
     set: (payload: Record<string, unknown>) => {
       sets.push(payload);
-      return {
-        where: () => ({
-          returning: () => Promise.resolve(claims.shift() ?? []),
-        }),
-      };
+      return { where: () => Promise.resolve() };
     },
   }));
-  const db = { update } as unknown as Parameters<typeof bumpUsage>[0];
+  const tx = {
+    select: () => ({
+      from: () => ({
+        where: () => ({
+          for: () => Promise.resolve(guild ? [guild] : []),
+        }),
+      }),
+    }),
+    update,
+  };
+  const db = {
+    update,
+    transaction: <T>(cb: (t: typeof tx) => Promise<T>) => cb(tx),
+  } as unknown as Parameters<typeof bumpUsage>[0];
   return { db, update, sets };
 }
 
-describe("bumpUsage", () => {
-  it("charges the plan bucket while under cap", async () => {
-    const { db, update, sets } = mockDb([[{ id: "g1" }]]);
-    expect(await bumpUsage(db, "g1", "code")).toBe("plan");
-    expect(update).toHaveBeenCalledTimes(1);
-    expect(Object.keys(sets[0] ?? {})).toEqual(["tasksUsedThisMonth"]);
+describe("claimUnits", () => {
+  it("claims all from the plan bucket when it has room", async () => {
+    const { db, sets } = mockDb({ taskCap: 10, tasksUsedThisMonth: 5, packTasksRemaining: 0 });
+    expect(await claimUnits(db, "g1", 3)).toEqual(["plan", "plan", "plan"]);
+    expect(sets[0]).toMatchObject({ tasksUsedThisMonth: 8, packTasksRemaining: 0 });
   });
 
-  it("falls back to the pack bucket once the plan claim fails", async () => {
-    const { db, update, sets } = mockDb([[]]);
+  it("splits plan + pack across the boundary", async () => {
+    const { db, sets } = mockDb({ taskCap: 10, tasksUsedThisMonth: 9, packTasksRemaining: 5 });
+    expect(await claimUnits(db, "g1", 3)).toEqual(["plan", "pack", "pack"]);
+    expect(sets[0]).toMatchObject({ tasksUsedThisMonth: 10, packTasksRemaining: 3 });
+  });
+
+  it("is all-or-nothing on shortfall — no partial spend, no free units", async () => {
+    const { db, update } = mockDb({ taskCap: 10, tasksUsedThisMonth: 10, packTasksRemaining: 1 });
+    expect(await claimUnits(db, "g1", 2)).toBeNull();
+    expect(update).not.toHaveBeenCalled();
+    // The old bug: both buckets dry still "succeeded". Now: null.
+    const dry = mockDb({ taskCap: 10, tasksUsedThisMonth: 10, packTasksRemaining: 0 });
+    expect(await claimUnits(dry.db, "g1", 1)).toBeNull();
+  });
+
+  it("handles a missing guild and n=0", async () => {
+    const { db } = mockDb(null);
+    expect(await claimUnits(db, "g1", 1)).toBeNull();
+    expect(await claimUnits(db, "g1", 0)).toEqual([]);
+  });
+});
+
+describe("bumpUsage", () => {
+  it("charges the plan bucket while under cap", async () => {
+    const { db } = mockDb({ taskCap: 10, tasksUsedThisMonth: 0, packTasksRemaining: 0 });
+    expect(await bumpUsage(db, "g1", "code")).toBe("plan");
+  });
+
+  it("falls back to the pack bucket once the plan cap is full", async () => {
+    const { db } = mockDb({ taskCap: 10, tasksUsedThisMonth: 10, packTasksRemaining: 2 });
     expect(await bumpUsage(db, "g1", "code")).toBe("pack");
-    expect(update).toHaveBeenCalledTimes(2);
-    expect(Object.keys(sets[1] ?? {})).toEqual(["packTasksRemaining"]);
+  });
+
+  it("races past a dry guild as refundable plan overage, never a free pack", async () => {
+    const { db, sets } = mockDb({ taskCap: 10, tasksUsedThisMonth: 10, packTasksRemaining: 0 });
+    expect(await bumpUsage(db, "g1", "code")).toBe("plan");
+    expect(Object.keys(sets.at(-1) ?? {})).toEqual(["tasksUsedThisMonth"]);
   });
 
   it("asks always charge the plan bucket", async () => {
