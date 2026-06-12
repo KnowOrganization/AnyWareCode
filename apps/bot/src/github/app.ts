@@ -63,6 +63,33 @@ export class GitHubService {
     return repos.map((r) => r.full_name);
   }
 
+  /** Repo names + visibility; the OSS tier requires every repo public. */
+  async listReposWithVisibility(
+    installationId: number,
+  ): Promise<Array<{ fullName: string; private: boolean }>> {
+    const client = await this.installationClient(installationId);
+    const repos = await client.paginate(
+      client.rest.apps.listReposAccessibleToInstallation,
+      { per_page: 100 },
+    );
+    return repos.map((r) => ({ fullName: r.full_name, private: r.private }));
+  }
+
+  /** Lazy OSS recheck at launch time. Unknown/unreadable counts as private. */
+  async repoIsPrivate(
+    installationId: number,
+    repoFullName: string,
+  ): Promise<boolean> {
+    const [owner, repo] = splitRepo(repoFullName);
+    try {
+      const client = await this.installationClient(installationId);
+      const { data } = await client.rest.repos.get({ owner, repo });
+      return data.private;
+    } catch {
+      return true;
+    }
+  }
+
   async defaultBranch(
     installationId: number,
     repoFullName: string,

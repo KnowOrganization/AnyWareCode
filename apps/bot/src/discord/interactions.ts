@@ -23,6 +23,7 @@ import {
   handleSetupCommand,
 } from "./connect.js";
 import { checkTaskPreconditions, launchTask, truncate } from "./launch.js";
+import { handleOssCommand } from "./oss.js";
 import { handleProposalButton } from "./proposals.js";
 import { welcomeMessage } from "./welcome.js";
 import { captureError } from "../observability.js";
@@ -99,6 +100,8 @@ async function handleCommand(
       return handleSetupCommand(ctx, interaction);
     case "billing":
       return handleBillingCommand(ctx, interaction);
+    case "oss":
+      return handleOssCommand(ctx, interaction);
   }
 }
 

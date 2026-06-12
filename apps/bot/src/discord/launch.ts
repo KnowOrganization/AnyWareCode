@@ -15,7 +15,7 @@ import { createInstallState } from "../github/install-state.js";
 import { resolveLlmAuth, type ResolvedLlmAuth } from "../llm/credentials.js";
 import { captureError } from "../observability.js";
 import { bumpUsage } from "../orchestrator/usage.js";
-import { allowPlatformKey, canInvoke, capState } from "./gates.js";
+import { allowPlatformKey, canInvoke, capState, resolveTier } from "./gates.js";
 import type { BotContext } from "./interactions.js";
 import { checkTrialGates } from "./trial-gates.js";
 
@@ -87,6 +87,19 @@ export async function checkTaskPreconditions(
     return {
       ok: false,
       reason: "No repo set for this channel yet — run `/repo set` first.",
+    };
+  }
+  // OSS tier is for public repos only; recheck lazily in case one went private.
+  if (
+    resolveTier(guild).kind === "oss" &&
+    (await ctx.github.repoIsPrivate(
+      guild.githubInstallationId,
+      channelRepo.repoFullName,
+    ))
+  ) {
+    return {
+      ok: false,
+      reason: `\`${channelRepo.repoFullName}\` is private — the OSS Community tier only runs on public repos.`,
     };
   }
   const cap = capState(guild, mode);

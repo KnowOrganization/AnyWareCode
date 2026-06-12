@@ -39,6 +39,14 @@ export const commands = [
     .setName("billing")
     .setDescription("Show this server's plan, usage, and upgrade link"),
   new SlashCommandBuilder()
+    .setName("oss")
+    .setDescription("OSS Community tier (free for public open-source servers)")
+    .addSubcommand((sub) =>
+      sub
+        .setName("apply")
+        .setDescription("Apply for the free OSS Community tier"),
+    ),
+  new SlashCommandBuilder()
     .setName("repo")
     .setDescription("Manage the repo this channel works on")
     .addSubcommand((sub) =>
