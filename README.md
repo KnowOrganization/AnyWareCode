@@ -107,11 +107,22 @@ Copy the `https://something.trycloudflare.com` URL — this is your `PUBLIC_URL`
    - **Homepage URL**: your `PUBLIC_URL` from Step 2
    - **Callback URL**: leave blank
    - **Setup URL**: `{PUBLIC_URL}/github/setup` — check **Redirect on update**
-   - **Webhook → Active**: **uncheck** (no webhooks needed)
+   - **Webhook → Active**: **check** and set:
+     - **Webhook URL**: `{PUBLIC_URL}/github/webhook`
+     - **Webhook secret**: a random string (>=16 chars) → `GITHUB_WEBHOOK_SECRET`
+       in `.env`. (Leaving both unset disables webhook features: issue feed,
+       auto-review, ship-log auto-post, proactive previews.)
 3. **Repository permissions**:
    - Contents: **Read & write**
    - Pull requests: **Read & write**
+   - Issues: **Read-only**
+   - Deployments: **Read-only**
+   - Commit statuses: **Read-only**
+   - Checks: **Read-only**
    - Metadata: **Read-only** (required automatically)
+   Then under **Subscribe to events**: check **Issues**, **Pull request**,
+   **Deployment status**. (Existing installations must approve any permission
+   change from their installation settings page.)
 4. **Where can this GitHub App be installed?**: Any account
 5. Click **Create GitHub App**.
 6. On the app page:

@@ -8,7 +8,16 @@ export class GitHubService {
     this.app = new App({
       appId: config.GITHUB_APP_ID,
       privateKey: config.GITHUB_APP_PRIVATE_KEY,
+      ...(config.GITHUB_WEBHOOK_SECRET
+        ? { webhooks: { secret: config.GITHUB_WEBHOOK_SECRET } }
+        : {}),
     });
+  }
+
+  /** Octokit webhooks (typed handlers + timing-safe verifyAndReceive).
+   * Only valid when GITHUB_WEBHOOK_SECRET is configured. */
+  get webhooks(): App["webhooks"] {
+    return this.app.webhooks;
   }
 
   installUrl(state: string): string {

@@ -26,7 +26,8 @@ import { registerCommands } from "./discord/register.js";
 import { findAnnounceChannel, welcomeMessage } from "./discord/welcome.js";
 import { GitHubService } from "./github/app.js";
 import { createInstallState, pruneExpiredInstallStates } from "./github/install-state.js";
-import { buildServer } from "./http/server.js";
+import { registerWebhookHandlers } from "./github/webhooks.js";
+import { buildServer, pruneWebhookDeliveries } from "./http/server.js";
 import { captureError, initSentry, log } from "./observability.js";
 import {
   killStaleContainers,
@@ -51,6 +52,11 @@ const orchestrator = new TaskOrchestrator(
   new DockerWorkspace(config),
   config,
 );
+if (!config.GITHUB_WEBHOOK_SECRET) {
+  log.warn(
+    "GITHUB_WEBHOOK_SECRET unset — /github/webhook disabled (issue feed, auto-review, ship-log webhook trigger, proactive previews off)",
+  );
+}
 
 // Register slash commands (global PUT, idempotent — safe to run on every boot).
 await registerCommands(config);
@@ -65,6 +71,7 @@ const client = new Client({
   partials: [Partials.Channel],
 });
 const ctx: BotContext = { db, config, github, orchestrator, client };
+registerWebhookHandlers({ db, config, github, client });
 
 client.on(Events.ClientReady, async (ready) => {
   log.info(`Logged in as ${ready.user.tag}`);
@@ -78,6 +85,7 @@ client.on(Events.ClientReady, async (ready) => {
   });
   await sweepExpiredProposals(db);
   await pruneExpiredInstallStates(db);
+  await pruneWebhookDeliveries(db);
   startPackAnnouncer(db, client);
 });
 

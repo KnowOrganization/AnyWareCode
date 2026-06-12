@@ -1,5 +1,5 @@
 import Fastify, { type FastifyInstance } from "fastify";
-import { eq, sql } from "drizzle-orm";
+import { eq, lt, sql } from "drizzle-orm";
 import type { Config } from "../config.js";
 import { claimOrgTrial, schema, type Db } from "@anywherecode/db";
 import type { GitHubService } from "../github/app.js";
@@ -94,5 +94,64 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
       );
   });
 
+  /**
+   * GitHub App webhook receiver. Scoped plugin so the raw-string body parser
+   * (needed for HMAC verification) doesn't leak to other routes. Order:
+   * dedup insert on the delivery id first (replay → 200 without re-running),
+   * then signature verification (bad sig → 401). Handlers never throw, so a
+   * non-401 response never reflects downstream Discord failures — GitHub
+   * doesn't auto-redeliver anyway.
+   */
+  if (deps.config.GITHUB_WEBHOOK_SECRET) {
+    void app.register(async (scope) => {
+      scope.addContentTypeParser(
+        "application/json",
+        { parseAs: "string", bodyLimit: 3 * 1024 * 1024 },
+        (_req, body, done) => done(null, body),
+      );
+      scope.post("/github/webhook", async (request, reply) => {
+        const id = request.headers["x-github-delivery"];
+        const name = request.headers["x-github-event"];
+        const signature = request.headers["x-hub-signature-256"];
+        if (
+          typeof id !== "string" ||
+          typeof name !== "string" ||
+          typeof signature !== "string" ||
+          typeof request.body !== "string"
+        ) {
+          return reply.code(400).send({ error: "malformed webhook" });
+        }
+        const inserted = await deps.db
+          .insert(schema.webhookDeliveries)
+          .values({ deliveryId: id, event: name })
+          .onConflictDoNothing()
+          .returning({ id: schema.webhookDeliveries.deliveryId });
+        if (inserted.length === 0) {
+          return reply.code(200).send({ duplicate: true });
+        }
+        try {
+          await deps.github.webhooks.verifyAndReceive({
+            id,
+            name,
+            signature,
+            payload: request.body,
+          });
+        } catch {
+          return reply.code(401).send({ error: "bad signature" });
+        }
+        return reply.code(200).send({ ok: true });
+      });
+    });
+  }
+
   return app;
+}
+
+/** Boot housekeeping: delivery ids only need to outlive GitHub's redelivery UI. */
+export async function pruneWebhookDeliveries(db: Db): Promise<void> {
+  await db
+    .delete(schema.webhookDeliveries)
+    .where(
+      lt(schema.webhookDeliveries.receivedAt, new Date(Date.now() - 3 * 86_400_000)),
+    );
 }
