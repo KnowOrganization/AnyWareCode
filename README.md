@@ -105,7 +105,10 @@ Copy the `https://something.trycloudflare.com` URL — this is your `PUBLIC_URL`
 2. Fill in:
    - **GitHub App name**: `AnywhereCode` (or any name; the slug in the URL = `GITHUB_APP_SLUG`)
    - **Homepage URL**: your `PUBLIC_URL` from Step 2
-   - **Callback URL**: leave blank
+   - **Callback URL**: `{PUBLIC_URL}/github/user-callback` — used by `/link github`
+     (provenance identity linking). Also click **Generate a new client secret**:
+     copy the **Client ID** → `GITHUB_CLIENT_ID` and the secret →
+     `GITHUB_CLIENT_SECRET`. (Leave both env vars unset to disable linking.)
    - **Setup URL**: `{PUBLIC_URL}/github/setup` — check **Redirect on update**
    - **Webhook → Active**: **check** and set:
      - **Webhook URL**: `{PUBLIC_URL}/github/webhook`
@@ -240,6 +243,19 @@ docker compose up -d --build
 
 Builds and starts: bot, runner image, egress proxy. DB is Supabase — no local Postgres.
 Bot runs migrations and registers commands automatically on boot.
+
+### Optional production features
+
+- **MCP extensions** (`/connect mcp`): set `MCP_HOST_ALLOWLIST` to the hostnames
+  admins may attach, AND add a matching regex line for each host to
+  `infra/egress-proxy/filter`, then rebuild the proxy (`docker compose up -d
+  --build egress-proxy`) — otherwise the connection dies at the proxy.
+- **Discord Premium Apps** (second billing rail): create the SKUs in the
+  [dev portal](https://discord.com/developers/applications) (guild
+  subscription SKUs for Pro/Studio at the same prices as Stripe, one
+  consumable SKU for task packs) and set `DISCORD_SKU_PRO`,
+  `DISCORD_SKU_STUDIO`, `DISCORD_SKU_PACK`. Payouts require a US/UK/EU
+  developer entity. Unset = the rail stays inert; Stripe keeps working.
 
 ---
 

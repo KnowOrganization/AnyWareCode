@@ -21,7 +21,7 @@ const mono = JetBrains_Mono({
 
 const TITLE = "AnywhereCode — Ship code from your Discord server";
 const DESCRIPTION =
-  "AnywhereCode runs a shared coding agent on your GitHub repos and opens pull requests. Type /code in any channel — it works in a thread, streams progress, and ships a PR.";
+  "One shared AI engineer for your whole Discord community — and it signs its work. Every PR carries a named human sponsor and a provenance receipt; Repro Gate filters slop bug reports before they cost a human minute.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(

@@ -77,8 +77,32 @@ export const features: Feature[] = [
   {
     icon: "▣",
     title: "Hardened by default",
-    body: "Every task runs in an ephemeral, non-root container: all capabilities dropped, CPU/mem/PID limits, auto-removed, and egress locked to an allowlist in prod.",
+    body: "Ephemeral non-root containers, read-only tokens for verification runs, and a quarantine layer that strips hidden instructions from inbound issues — designed after Comment and Control, not before it.",
     accent: "blurple",
+  },
+  {
+    icon: "🔬",
+    title: "Repro Gate",
+    body: "Inbound bug reports get verified in the sandbox before a human spends a minute: symbols checked, snippets run, a verdict card posted. Your slop filter, not another slop source.",
+    accent: "mint",
+  },
+  {
+    icon: "🧾",
+    title: "Provenance receipts",
+    body: "Every agent PR names its human sponsor, plan approver, and steerers — with test evidence and a link to the public thread. The only AI contribution maintainers can audit.",
+    accent: "indigo",
+  },
+  {
+    icon: "⚔",
+    title: "Squad Mode",
+    body: "Hard problem? Run N parallel attempts in separate sandboxes, compare diffs side by side, and let the server vote on which one ships.",
+    accent: "pink",
+  },
+  {
+    icon: "🔌",
+    title: "MCP extensions",
+    body: "Attach your Sentry, database, or tracker via Model Context Protocol — the agent runs with your context, role-gated and egress-allowlisted per connection.",
+    accent: "cyan",
   },
 ];
 
@@ -171,8 +195,8 @@ export const tiers: Tier[] = [
     features: [
       "30 pooled code tasks / mo",
       "Unlimited questions on public repos",
+      "Repro Gate — filter slop reports free",
       "Maintainer-gated runs",
-      "Bring your own LLM key",
       "Apply with /oss apply",
     ],
     cta: "Add to Discord",
@@ -186,10 +210,10 @@ export const tiers: Tier[] = [
     tagline: "One shared engineer for the whole server — no per-seat math.",
     features: [
       "100 code tasks / mo",
-      "400 questions / mo",
+      "400 questions / mo + Repro Gate",
       "2 concurrent tasks",
       "Server Memory + Review agent",
-      "Scheduled tasks",
+      "Scheduled tasks + MCP extensions",
     ],
     cta: "Get Pro",
     external: false,
@@ -206,7 +230,7 @@ export const tiers: Tier[] = [
       "2,000 questions / mo",
       "5 concurrent tasks",
       "Voice → PR Standup Mode",
-      "Spectate + preview deploys",
+      "Squad Mode + Spectate + previews",
     ],
     cta: "Get Studio",
     external: false,
@@ -256,8 +280,16 @@ export const faqs: Faq[] = [
     a: "Admins only by default. Use /config role to grant a specific role access. @everyone and @here never trigger the bot.",
   },
   {
-    q: "What about prompt injection from repos?",
-    a: "Repo content is treated as untrusted. The agent's system prompt instructs it to ignore embedded instructions, and the container is fully isolated as a second line of defense.",
+    q: "What about prompt injection from repos and issues?",
+    a: "All external content is treated as untrusted. Inbound issues and PRs pass a quarantine layer that strips HTML comments and invisible Unicode and flags instruction-like content on the card; verification runs hold read-only tokens; and the container is fully isolated. Designed after the Comment and Control disclosures, not before them.",
+  },
+  {
+    q: "Isn't this just more AI slop for maintainers?",
+    a: "The opposite, by construction: nothing runs without a named human sponsor, every PR carries a provenance receipt (who asked, who approved, who steered, what was verified), and Repro Gate filters incoming bug reports before they cost a human minute.",
+  },
+  {
+    q: "What's an AGENTS.md and why do you care?",
+    a: "The open per-repo conventions standard read by 20+ coding tools. AnywhereCode reads yours on every run, and /memory commit flows your server's accumulated conventions back into it via PR — your context improves every agent you use, not just ours.",
   },
 ];
 

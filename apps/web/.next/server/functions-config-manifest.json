@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "functions": {
+    "/api/admin/oss": {},
+    "/api/checkout/pack": {},
+    "/api/portal": {},
+    "/api/checkout": {},
+    "/api/stripe/webhook": {},
+    "/api/admin/flags": {}
+  }
+}

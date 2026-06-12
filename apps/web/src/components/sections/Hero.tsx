@@ -35,12 +35,13 @@ export function Hero() {
               </h1>
 
               <p className="mt-6 max-w-xl text-lg text-muted">
-                AnywhereCode runs a shared coding agent on your GitHub repos and
-                opens pull requests — type{" "}
+                One shared AI engineer for your whole community — and it signs
+                its work. Type{" "}
                 <code className="rounded-md border border-line-strong bg-surface px-1.5 py-0.5 font-mono text-[0.9em] text-cyan">
                   /code
                 </code>{" "}
-                in any channel and review the PR.
+                in any channel; every PR ships with a named human sponsor and a
+                provenance receipt.
               </p>
 
               <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">

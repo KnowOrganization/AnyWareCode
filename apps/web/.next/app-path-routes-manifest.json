@@ -1,0 +1,17 @@
+{
+  "/_not-found/page": "/_not-found",
+  "/icon.svg/route": "/icon.svg",
+  "/api/auth/[...nextauth]/route": "/api/auth/[...nextauth]",
+  "/api/checkout/pack/route": "/api/checkout/pack",
+  "/api/checkout/route": "/api/checkout",
+  "/api/admin/flags/route": "/api/admin/flags",
+  "/api/admin/oss/route": "/api/admin/oss",
+  "/api/portal/route": "/api/portal",
+  "/api/stripe/webhook/route": "/api/stripe/webhook",
+  "/dashboard/[guildId]/page": "/dashboard/[guildId]",
+  "/dashboard/page": "/dashboard",
+  "/page": "/",
+  "/packs/[guildId]/page": "/packs/[guildId]",
+  "/legal/privacy/page": "/legal/privacy",
+  "/legal/terms/page": "/legal/terms"
+}
