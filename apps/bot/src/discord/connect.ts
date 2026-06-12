@@ -13,6 +13,7 @@ import {
 } from "discord.js";
 import { eq } from "drizzle-orm";
 import { schema } from "@anywherecode/db";
+import { isClaudeOauthEnabled } from "../flags.js";
 import { createInstallState } from "../github/install-state.js";
 import {
   encryptCredential,
@@ -44,7 +45,12 @@ async function handleConnectLlm(
   }
   const guildId = interaction.guildId!;
   const guild = await ensureGuild(ctx.db, guildId, ctx.config);
-  await interaction.reply(llmChooserMessage(guild.llmProviderType ?? null));
+  await interaction.reply(
+    llmChooserMessage(
+      guild.llmProviderType ?? null,
+      await isClaudeOauthEnabled(ctx.db),
+    ),
+  );
 }
 
 async function handleConnectGithub(
@@ -104,7 +110,20 @@ export async function handleLlmButton(
       interaction.guildId,
       ctx.config,
     );
-    await interaction.reply(llmChooserMessage(guild.llmProviderType ?? null));
+    await interaction.reply(
+      llmChooserMessage(
+        guild.llmProviderType ?? null,
+        await isClaudeOauthEnabled(ctx.db),
+      ),
+    );
+    return;
+  }
+
+  if (action === "claude_oauth" && !(await isClaudeOauthEnabled(ctx.db))) {
+    await interaction.reply({
+      content: oauthDisabledMessage,
+      flags: MessageFlags.Ephemeral,
+    });
     return;
   }
 
@@ -131,6 +150,11 @@ export async function handleLlmModal(
     const token = interaction.fields.getTextInputValue("token").trim();
     auth = { type: "anthropic_api_key", token };
   } else if (providerType === "claude_oauth") {
+    // Re-check at submit time — the modal may have been open when the flag flipped.
+    if (!(await isClaudeOauthEnabled(ctx.db))) {
+      await interaction.editReply(oauthDisabledMessage);
+      return;
+    }
     const token = interaction.fields.getTextInputValue("token").trim();
     auth = { type: "claude_oauth", token };
   } else if (providerType === "custom") {
@@ -257,7 +281,13 @@ export async function handleBillingCommand(
   });
 }
 
-function llmChooserMessage(current: string | null): {
+const oauthDisabledMessage =
+  "Subscription-token connections are currently disabled. Connect an Anthropic API key instead (`/connect llm`).";
+
+function llmChooserMessage(
+  current: string | null,
+  oauthEnabled: boolean,
+): {
   content: string;
   components: ActionRowBuilder<ButtonBuilder>[];
   flags: typeof MessageFlags.Ephemeral;
@@ -266,15 +296,21 @@ function llmChooserMessage(current: string | null): {
     ? `Currently connected: **${providerTypeLabel(current)}**. Choose a provider to reconnect, or remove.`
     : "Choose how to connect your LLM. You'll be asked for credentials next — they're never posted to the channel.";
 
+  // API key leads; the subscription-token path sits behind a kill switch.
   const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
-    new ButtonBuilder()
-      .setCustomId("aw:llm:claude_oauth")
-      .setLabel("Claude subscription (Pro/Max)")
-      .setStyle(ButtonStyle.Primary),
     new ButtonBuilder()
       .setCustomId("aw:llm:anthropic_api_key")
       .setLabel("Anthropic API key")
-      .setStyle(ButtonStyle.Secondary),
+      .setStyle(ButtonStyle.Primary),
+    new ButtonBuilder()
+      .setCustomId("aw:llm:claude_oauth")
+      .setLabel(
+        oauthEnabled
+          ? "Claude subscription (Pro/Max)"
+          : "Claude subscription (disabled)",
+      )
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(!oauthEnabled),
     new ButtonBuilder()
       .setCustomId("aw:llm:custom")
       .setLabel("Other provider")
