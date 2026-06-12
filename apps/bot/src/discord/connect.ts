@@ -57,6 +57,13 @@ async function handleConnectGithub(
   ctx: BotContext,
   interaction: ChatInputCommandInteraction,
 ): Promise<void> {
+  if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
+    await interaction.reply({
+      content: "Only server admins can connect GitHub.",
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
   const guildId = interaction.guildId!;
   const state = await createInstallState(
     ctx.db,
@@ -264,19 +271,48 @@ export async function handleBillingCommand(
         : `⏳ Trial ended — connect your own key with \`/connect llm\`.`,
     );
   }
+  if (plan.status === "past_due") {
+    lines.push("⚠️ Payment overdue — update your card or the plan lapses.");
+  }
   if (guild.currentPeriodEnd && plan.status === "active") {
     lines.push(`🔁 Renews ${guild.currentPeriodEnd.toDateString()}.`);
   }
+  if (guild.ossStatus === "pending") {
+    lines.push("🌱 OSS Community application pending review.");
+  } else if (guild.ossStatus === "rejected") {
+    lines.push("🌱 OSS Community application was not approved.");
+  }
+  const askUsage = ask.unlimited
+    ? `${ask.used}/∞ questions`
+    : `${ask.used}/${ask.cap} questions`;
   lines.push(
-    `📊 This month: ${code.used}/${code.cap} code tasks, ${ask.used}/${ask.cap} questions.`,
+    `📊 This month: ${code.used}/${code.cap} code tasks, ${askUsage}.`,
   );
+  lines.push(`🔋 Pack balance: ${plan.packRemaining} task(s).`);
+
+  const buttons: ButtonBuilder[] = [];
   if (ctx.config.WEB_URL) {
-    const verb = plan.status === "active" ? "Manage billing" : "Upgrade";
-    lines.push(`🔗 ${verb}: ${ctx.config.WEB_URL}`);
+    buttons.push(
+      new ButtonBuilder()
+        .setStyle(ButtonStyle.Link)
+        .setLabel(plan.status === "active" ? "Manage billing" : "Upgrade")
+        .setURL(`${ctx.config.WEB_URL}/dashboard/${guildId}`),
+      new ButtonBuilder()
+        .setStyle(ButtonStyle.Link)
+        .setLabel("Buy a task pack 🔋")
+        .setURL(`${ctx.config.WEB_URL}/packs/${guildId}`),
+    );
   }
 
   await interaction.reply({
     content: lines.join("\n"),
+    ...(buttons.length > 0
+      ? {
+          components: [
+            new ActionRowBuilder<ButtonBuilder>().addComponents(...buttons),
+          ],
+        }
+      : {}),
     flags: MessageFlags.Ephemeral,
   });
 }

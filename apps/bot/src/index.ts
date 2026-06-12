@@ -20,6 +20,7 @@ import {
   isBotMentioned,
   stripBotMention,
 } from "./discord/mentions.js";
+import { startPackAnnouncer } from "./discord/pack-announcer.js";
 import { sweepExpiredProposals } from "./discord/proposals.js";
 import { registerCommands } from "./discord/register.js";
 import { findAnnounceChannel, welcomeMessage } from "./discord/welcome.js";
@@ -77,6 +78,7 @@ client.on(Events.ClientReady, async (ready) => {
   });
   await sweepExpiredProposals(db);
   await pruneExpiredInstallStates(db);
+  startPackAnnouncer(db, client);
 });
 
 // Bot removed from a server: erase the guild's data (privacy + housekeeping).
