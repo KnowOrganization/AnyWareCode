@@ -65,6 +65,45 @@ export const commands = [
       sub.setName("show").setDescription("Show this channel's active repo"),
     ),
   new SlashCommandBuilder()
+    .setName("memory")
+    .setDescription("Server Memory: per-repo conventions loaded into every run")
+    .addSubcommand((sub) =>
+      sub.setName("view").setDescription("Show this channel's repo memory"),
+    )
+    .addSubcommand((sub) =>
+      sub.setName("edit").setDescription("Edit the full memory doc (modal)"),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName("add")
+        .setDescription("Append a one-line rule")
+        .addStringOption((opt) =>
+          opt
+            .setName("rule")
+            .setDescription('e.g. "we use pnpm, never npm"')
+            .setRequired(true),
+        ),
+    )
+    .addSubcommand((sub) =>
+      sub.setName("clear").setDescription("Delete this repo's memory"),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName("template")
+        .setDescription("Start from a template")
+        .addStringOption((opt) =>
+          opt
+            .setName("name")
+            .setDescription("Template")
+            .setRequired(true)
+            .addChoices(
+              { name: "general", value: "general" },
+              { name: "godot-gdscript", value: "godot-gdscript" },
+              { name: "unity-csharp", value: "unity-csharp" },
+            ),
+        ),
+    ),
+  new SlashCommandBuilder()
     .setName("status")
     .setDescription("Show running and queued tasks in this server"),
   new SlashCommandBuilder()

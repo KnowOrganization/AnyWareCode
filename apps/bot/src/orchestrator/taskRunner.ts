@@ -6,7 +6,7 @@ import {
   EmbedBuilder,
   type ThreadChannel,
 } from "discord.js";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import {
   taskBranchName,
   type TaskSpec,
@@ -172,6 +172,13 @@ export class TaskOrchestrator {
       params.installationId,
       params.repoFullName,
     );
+    // Server Memory: trusted per-repo conventions, injected into every run.
+    const memoryRow = await this.db.query.serverMemories.findFirst({
+      where: and(
+        eq(schema.serverMemories.guildId, params.guildId),
+        eq(schema.serverMemories.repoFullName, params.repoFullName),
+      ),
+    });
     const spec: TaskSpec = {
       taskId,
       repo: params.repoFullName,
@@ -183,6 +190,7 @@ export class TaskOrchestrator {
       resumeBranch: Boolean(params.iterate),
       githubToken: token,
       llmAuth: resolved.auth,
+      ...(memoryRow?.content.trim() ? { memory: memoryRow.content } : {}),
     };
 
     // Only non-secret config goes in the container environment.

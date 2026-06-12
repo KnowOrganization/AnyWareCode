@@ -23,6 +23,7 @@ import {
   handleSetupCommand,
 } from "./connect.js";
 import { checkTaskPreconditions, launchTask, truncate } from "./launch.js";
+import { handleMemoryCommand, handleMemoryModal } from "./memory.js";
 import { handleOssCommand } from "./oss.js";
 import { handleProposalButton } from "./proposals.js";
 import { welcomeMessage } from "./welcome.js";
@@ -102,6 +103,8 @@ async function handleCommand(
       return handleBillingCommand(ctx, interaction);
     case "oss":
       return handleOssCommand(ctx, interaction);
+    case "memory":
+      return handleMemoryCommand(ctx, interaction);
   }
 }
 
@@ -463,7 +466,12 @@ async function handleModal(
   if (!interaction.inGuild() || !interaction.guildId) return;
   const parts = interaction.customId.split(":");
   const [ns, type, providerType] = parts;
-  if (ns !== "aw" || type !== "llm_modal" || !providerType) return;
+  if (ns !== "aw") return;
+  if (type === "memory_modal") {
+    await handleMemoryModal(ctx, interaction);
+    return;
+  }
+  if (type !== "llm_modal" || !providerType) return;
   await handleLlmModal(ctx, interaction, providerType);
 }
 
