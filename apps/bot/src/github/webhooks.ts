@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { schema, type Db, type Guild } from "@anywherecode/db";
 import type { Config } from "../config.js";
 import { handleIssueEvent } from "../discord/issue-feed.js";
+import { applyPreviewToCard } from "../discord/preview-card.js";
 import { postShipLog } from "../discord/shiplog.js";
 import { log } from "../observability.js";
 import type { GitHubService } from "./app.js";
@@ -90,5 +91,39 @@ export function registerWebhookHandlers(deps: WebhookDeps): void {
         );
       }
     })().catch((err) => log.warn({ err }, "ship log webhook failed"));
+  });
+
+  // Proactive previews: a deploy succeeded → find the PRs on that commit →
+  // upgrade matching agent PR cards' Preview button to a live link.
+  webhooks.on("deployment_status", ({ payload }) => {
+    if (!payload.installation) return;
+    const url = payload.deployment_status.environment_url;
+    if (payload.deployment_status.state !== "success" || !url) return;
+    void (async () => {
+      const installationId = payload.installation!.id;
+      const repoFullName = payload.repository.full_name;
+      const client = await deps.github.installationClient(installationId);
+      const { data: prs } =
+        await client.rest.repos.listPullRequestsAssociatedWithCommit({
+          owner: payload.repository.owner.login,
+          repo: payload.repository.name,
+          commit_sha: payload.deployment.sha,
+        });
+      if (prs.length === 0) return;
+      const guilds = await guildsForInstallation(deps.db, installationId);
+      for (const guild of guilds) {
+        for (const pr of prs) {
+          const task = await deps.db.query.tasks.findFirst({
+            where: and(
+              eq(schema.tasks.guildId, guild.id),
+              eq(schema.tasks.repoFullName, repoFullName),
+              eq(schema.tasks.prNumber, pr.number),
+            ),
+          });
+          if (!task || task.previewUrl === url) continue;
+          await applyPreviewToCard({ db: deps.db, client: deps.client }, task, url);
+        }
+      }
+    })().catch((err) => log.warn({ err }, "preview webhook failed"));
   });
 }

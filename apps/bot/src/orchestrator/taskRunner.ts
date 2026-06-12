@@ -15,6 +15,7 @@ import {
 import type { Config } from "../config.js";
 import { schema, type Db } from "@anywherecode/db";
 import { maybeSuggestMemory } from "../discord/memorySuggestions.js";
+import { prCardButtons } from "../discord/preview-card.js";
 import type { GitHubService } from "../github/app.js";
 import { isAuthError, resolveLlmAuth } from "../llm/credentials.js";
 import { log } from "../observability.js";
@@ -390,22 +391,7 @@ export class TaskOrchestrator {
           .setURL(prUrl)
           .setDescription(truncateForDiscord(summary ?? params.prompt)),
       ],
-      components: [
-        new ActionRowBuilder<ButtonBuilder>().addComponents(
-          new ButtonBuilder()
-            .setCustomId(`aw:merge:${taskId}`)
-            .setLabel("Merge")
-            .setStyle(ButtonStyle.Success),
-          new ButtonBuilder()
-            .setCustomId(`aw:iterate:${taskId}`)
-            .setLabel("Iterate")
-            .setStyle(ButtonStyle.Primary),
-          new ButtonBuilder()
-            .setLabel("View on GitHub")
-            .setStyle(ButtonStyle.Link)
-            .setURL(prUrl),
-        ),
-      ],
+      components: [prCardButtons(taskId, prUrl, null)],
     });
 
     await this.db

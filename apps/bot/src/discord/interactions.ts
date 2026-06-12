@@ -13,6 +13,8 @@ import type { Config } from "../config.js";
 import { schema, type Db } from "@anywherecode/db";
 import type { GitHubService } from "../github/app.js";
 import { createInstallState } from "../github/install-state.js";
+import { findPreviewUrl, prHeadSha } from "../github/preview.js";
+import { applyPreviewToCard } from "./preview-card.js";
 import type { TaskOrchestrator } from "../orchestrator/taskRunner.js";
 import { canInvoke, capState, ensureGuild, resolveTier } from "./gates.js";
 import {
@@ -511,6 +513,41 @@ async function handleButton(
         : "This task isn't running anymore.",
       flags: MessageFlags.Ephemeral,
     });
+    return;
+  }
+
+  // Preview is read-only — any member may resolve it; no canInvoke gate.
+  if (action === "preview") {
+    if (!task.prNumber || !guild.githubInstallationId) {
+      await interaction.reply({
+        content: "This task has no PR to preview.",
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const sha = await prHeadSha(
+      ctx.github,
+      guild.githubInstallationId,
+      task.repoFullName,
+      task.prNumber,
+    );
+    const url = sha
+      ? await findPreviewUrl(
+          ctx.github,
+          guild.githubInstallationId,
+          task.repoFullName,
+          sha,
+        )
+      : null;
+    if (!url) {
+      await interaction.editReply(
+        "No preview deployment found yet — if your CI publishes one (Vercel/Netlify/Pages), try again once it finishes.",
+      );
+      return;
+    }
+    await applyPreviewToCard({ db: ctx.db, client: interaction.client }, task, url);
+    await interaction.editReply(`🔍 Preview: ${url}`);
     return;
   }
 
