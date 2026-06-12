@@ -4,6 +4,7 @@ import {
   GatewayIntentBits,
   Partials,
 } from "discord.js";
+import { and, eq } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { loadConfig } from "./config.js";
 import {
@@ -11,8 +12,10 @@ import {
   createDb,
   deleteGuildData,
   migrationsDir,
+  schema,
 } from "@anywherecode/db";
 import { ensureGuild } from "./discord/gates.js";
+import { approvePlanProposal, canApprovePlan } from "./discord/plan-votes.js";
 import { handleInteraction, type BotContext } from "./discord/interactions.js";
 import {
   botRoleIdsOf,
@@ -67,9 +70,11 @@ const client = new Client({
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.GuildMessageReactions,
     GatewayIntentBits.MessageContent,
   ],
-  partials: [Partials.Channel],
+  // Message/Reaction partials: ✅ plan-vote approvals on uncached card messages.
+  partials: [Partials.Channel, Partials.Message, Partials.Reaction],
 });
 const ctx: BotContext = { db, config, github, orchestrator, client };
 registerWebhookHandlers(ctx);
@@ -115,6 +120,42 @@ client.on(Events.GuildCreate, async (guild) => {
 
 client.on(Events.InteractionCreate, (interaction) => {
   void handleInteraction(ctx, interaction);
+});
+
+// ✅ reaction on a plan-vote card approves it (same gates as the button).
+client.on(Events.MessageReactionAdd, (reaction, user) => {
+  void (async () => {
+    if (user.bot || reaction.emoji.name !== "✅") return;
+    const message = reaction.message.partial
+      ? await reaction.message.fetch().catch(() => null)
+      : reaction.message;
+    if (!message?.inGuild()) return;
+    const proposal = await db.query.proposals.findFirst({
+      where: and(
+        eq(schema.proposals.messageId, message.id),
+        eq(schema.proposals.source, "plan"),
+        eq(schema.proposals.status, "pending"),
+      ),
+    });
+    if (!proposal || proposal.guildId !== message.guildId) return;
+    const guildRow = await ensureGuild(db, message.guildId, config);
+    const member = await message.guild.members.fetch(user.id).catch(() => null);
+    if (!member || !canApprovePlan(guildRow, member)) return;
+    const result = await approvePlanProposal(
+      ctx,
+      proposal,
+      { id: user.id, username: member.user.username },
+      client,
+    );
+    if (result.ok) {
+      await message
+        .edit({
+          content: `🧵 **${proposal.repoFullName}** — ${proposal.summary} (plan approved by ${member.user.username} ✅)`,
+          components: [],
+        })
+        .catch(() => {});
+    }
+  })().catch((err) => captureError(err, { msg: "plan-vote reaction failed" }));
 });
 
 // Message routing: replies in an active task thread reach the agent

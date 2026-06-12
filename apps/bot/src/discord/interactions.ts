@@ -28,7 +28,8 @@ import { checkTaskPreconditions, launchTask, truncate } from "./launch.js";
 import { handleMemoryCommand, handleMemoryModal } from "./memory.js";
 import { handleMemorySuggestionButton } from "./memorySuggestions.js";
 import { handleOssCommand } from "./oss.js";
-import { handleProposalButton } from "./proposals.js";
+import { handlePlanVoteButton, maybeRequirePlanVote } from "./plan-votes.js";
+import { handleProposalButton, setProposalMessageId } from "./proposals.js";
 import { handleReviewCommand } from "./review.js";
 import { handleScheduleCommand } from "./schedule.js";
 import { postShipLog } from "./shiplog.js";
@@ -151,6 +152,27 @@ async function startAgentTask(
       flags: MessageFlags.Ephemeral,
     });
     return;
+  }
+
+  if (mode === "code") {
+    const decision = await maybeRequirePlanVote(ctx, {
+      guild,
+      authorId: interaction.user.id,
+      repoFullName: pre.repoFullName,
+      channelId: interaction.channelId,
+      prompt,
+      summary: truncate(prompt.split("\n")[0] ?? prompt, 80),
+    });
+    if (decision.kind === "vote") {
+      await interaction.reply({
+        content: decision.card.content ?? "",
+        components: decision.card.components ?? [],
+        allowedMentions: { parse: [] },
+      });
+      const card = await interaction.fetchReply();
+      await setProposalMessageId(ctx.db, decision.proposalId, card.id);
+      return;
+    }
   }
 
   const emoji = mode === "code" ? "🧵" : "💬";
@@ -352,6 +374,26 @@ async function handleConfig(
     return;
   }
 
+  if (sub === "planvotes") {
+    const mode = interaction.options.getString("mode", true) as
+      | "instant"
+      | "one_approval"
+      | "role_gated";
+    const role = interaction.options.getRole("role");
+    await ctx.db
+      .update(schema.guilds)
+      .set({ planVoteMode: mode, planVoteRoleId: role?.id ?? null })
+      .where(eq(schema.guilds.id, guildId));
+    await interaction.reply(
+      mode === "instant"
+        ? "✅ Plan votes off — code tasks start immediately."
+        : mode === "one_approval"
+          ? "🗳️ Code tasks now post a plan card first; any authorized member's ✅ starts the run."
+          : `🗳️ Code tasks now post a plan card first; approval needs ${role ? `the ${role.name} role` : "a server admin"}.`,
+    );
+    return;
+  }
+
   if (sub === "review") {
     const repoFullName = interaction.options.getString("repo", true);
     const channel = interaction.options.getChannel("channel");
@@ -496,6 +538,15 @@ async function handleButton(
   if (action === "llm") {
     const subAction = parts[2] ?? "";
     await handleLlmButton(ctx, interaction, subAction);
+    return;
+  }
+
+  // Plan-vote cards carry a proposalId
+  if (action === "planvote") {
+    const sub = parts[2];
+    const proposalId = parts[3];
+    if ((sub !== "approve" && sub !== "reject") || !proposalId) return;
+    await handlePlanVoteButton(ctx, interaction, sub, proposalId);
     return;
   }
 

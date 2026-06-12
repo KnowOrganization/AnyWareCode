@@ -186,6 +186,28 @@ export const commands = [
     )
     .addSubcommand((sub) =>
       sub
+        .setName("planvotes")
+        .setDescription("Require team approval of the agent's plan before code tasks run")
+        .addStringOption((opt) =>
+          opt
+            .setName("mode")
+            .setDescription("Approval mode")
+            .setRequired(true)
+            .addChoices(
+              { name: "instant (no vote)", value: "instant" },
+              { name: "one approval", value: "one_approval" },
+              { name: "role-gated", value: "role_gated" },
+            ),
+        )
+        .addRoleOption((opt) =>
+          opt
+            .setName("role")
+            .setDescription("Approver role (role-gated mode; admins always may)")
+            .setRequired(false),
+        ),
+    )
+    .addSubcommand((sub) =>
+      sub
         .setName("review")
         .setDescription("Auto-review every opened PR on a repo")
         .addStringOption((opt) =>

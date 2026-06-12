@@ -17,7 +17,12 @@ import {
   launchTask,
   truncate,
 } from "./launch.js";
-import { createProposal, proposalMessage } from "./proposals.js";
+import { maybeRequirePlanVote } from "./plan-votes.js";
+import {
+  createProposal,
+  proposalMessage,
+  setProposalMessageId,
+} from "./proposals.js";
 import { captureError } from "../observability.js";
 
 /**
@@ -308,6 +313,26 @@ async function actOnDecision(
       thread: { kind: "existing", thread: message.channel as ThreadChannel },
     });
     return;
+  }
+
+  if (mode === "code") {
+    const decision = await maybeRequirePlanVote(ctx, {
+      guild: env.guild,
+      authorId: message.author.id,
+      repoFullName: pre.repoFullName,
+      channelId: message.channelId,
+      prompt,
+      summary,
+    });
+    if (decision.kind === "vote") {
+      const card = await message.reply({
+        content: decision.card.content ?? "",
+        components: decision.card.components ?? [],
+        allowedMentions: { parse: [] },
+      });
+      await setProposalMessageId(ctx.db, decision.proposalId, card.id);
+      return;
+    }
   }
 
   await launchTask(ctx, {

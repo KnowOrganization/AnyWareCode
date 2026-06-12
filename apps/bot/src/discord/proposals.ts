@@ -13,6 +13,7 @@ import type { Proposal } from "@anywherecode/db";
 import { canInvoke, ensureGuild } from "./gates.js";
 import type { BotContext } from "./interactions.js";
 import { checkTaskPreconditions, launchTask, truncate } from "./launch.js";
+import { maybeRequirePlanVote } from "./plan-votes.js";
 
 /**
  * Inferred-task proposals. When a mention implies a coding task that nobody
@@ -195,6 +196,30 @@ export async function handleProposalButton(
       content: "Someone already acted on this proposal.",
       flags: MessageFlags.Ephemeral,
     });
+    return;
+  }
+
+  // Plan votes apply to every code entry point. A Run click on a chat/issue/
+  // schedule proposal escalates to a plan card instead of launching directly.
+  const decision = await maybeRequirePlanVote(ctx, {
+    guild,
+    authorId: interaction.user.id,
+    repoFullName: pre.repoFullName,
+    channelId: proposal.channelId,
+    prompt: proposal.prompt,
+    summary: proposal.summary,
+  });
+  if (decision.kind === "vote") {
+    await interaction.update({
+      content: `🗳️ ${truncate(proposal.summary, 100)} — plan vote posted by ${interaction.user.username}.`,
+      components: [],
+    });
+    const card = await interaction.message.reply({
+      content: decision.card.content ?? "",
+      components: decision.card.components ?? [],
+      allowedMentions: { parse: [] },
+    });
+    await setProposalMessageId(ctx.db, decision.proposalId, card.id);
     return;
   }
 
