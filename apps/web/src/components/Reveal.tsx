@@ -4,6 +4,7 @@ import { useRef, type ReactNode } from "react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useGSAP } from "@gsap/react";
+import { introHeld, whenIntroDone } from "@/lib/introGate";
 
 gsap.registerPlugin(ScrollTrigger, useGSAP);
 
@@ -29,9 +30,9 @@ export function Reveal({
   const ref = useRef<HTMLDivElement>(null);
 
   useGSAP(
-    () => {
+    (_, contextSafe) => {
       const el = ref.current;
-      if (!el) return;
+      if (!el || !contextSafe) return;
       // Respect reduced-motion: leave content fully visible, skip the reveal.
       if (
         typeof window !== "undefined" &&
@@ -40,21 +41,26 @@ export function Reveal({
         return;
       }
       const targets = stagger ? Array.from(el.children) : el;
-      gsap.from(targets, {
-        autoAlpha: 0,
-        y,
-        duration: 0.85,
-        delay,
-        ease: "power3.out",
-        stagger: stagger ? 0.08 : 0,
-        scrollTrigger: {
-          trigger: el,
-          start: "top 88%",
-          toggleActions: once
-            ? "play none none none"
-            : "play none none reverse",
-        },
+      const build = contextSafe(() => {
+        gsap.from(targets, {
+          autoAlpha: 0,
+          y,
+          duration: 0.85,
+          delay,
+          ease: "power3.out",
+          stagger: stagger ? 0.08 : 0,
+          scrollTrigger: {
+            trigger: el,
+            start: "top 88%",
+            toggleActions: once
+              ? "play none none none"
+              : "play none none reverse",
+          },
+        });
       });
+      // Wait out the preloader so the entrance plays as the curtain lifts.
+      if (introHeld()) whenIntroDone(build);
+      else build();
     },
     { scope: ref },
   );

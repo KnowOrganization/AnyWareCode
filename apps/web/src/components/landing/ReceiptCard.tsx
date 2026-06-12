@@ -4,6 +4,8 @@ import { useRef } from "react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useGSAP } from "@gsap/react";
+import { Tilt } from "@/components/fx/Tilt";
+import { introHeld, whenIntroDone } from "@/lib/introGate";
 
 gsap.registerPlugin(ScrollTrigger, useGSAP);
 
@@ -24,37 +26,42 @@ export function ReceiptCard() {
   const ref = useRef<HTMLDivElement>(null);
 
   useGSAP(
-    () => {
+    (_, contextSafe) => {
       const el = ref.current;
-      if (!el) return;
+      if (!el || !contextSafe) return;
       if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
 
-      const tl = gsap.timeline({
-        scrollTrigger: { trigger: el, start: "top 80%" },
-      });
-      tl.from(el.querySelectorAll("[data-row]"), {
-        autoAlpha: 0,
-        y: 10,
-        duration: 0.32,
-        stagger: 0.09,
-        ease: "power2.out",
-      }).from(
-        el.querySelector("[data-stamp]"),
-        {
+      const build = contextSafe(() => {
+        const tl = gsap.timeline({
+          scrollTrigger: { trigger: el, start: "top 80%" },
+        });
+        tl.from(el.querySelectorAll("[data-row]"), {
           autoAlpha: 0,
-          scale: 1.9,
-          rotate: 8,
-          duration: 0.45,
-          ease: "back.out(2.2)",
-        },
-        "-=0.1",
-      );
+          y: 10,
+          duration: 0.32,
+          stagger: 0.09,
+          ease: "power2.out",
+        }).from(
+          el.querySelector("[data-stamp]"),
+          {
+            autoAlpha: 0,
+            scale: 1.9,
+            rotate: 8,
+            duration: 0.45,
+            ease: "back.out(2.2)",
+          },
+          "-=0.1",
+        );
+      });
+      if (introHeld()) whenIntroDone(build);
+      else build();
     },
     { scope: ref },
   );
 
   return (
     <div ref={ref} className="relative">
+      <Tilt>
       <div className="perf-y bg-bg-soft px-6 pb-8 pt-7 sm:px-8 shadow-[0_30px_80px_-30px_rgba(0,0,0,0.8)]">
         <p data-row className="label-mono text-faint">
           ANYWARECODE — PROVENANCE RECEIPT
@@ -87,6 +94,7 @@ export function ReceiptCard() {
       >
         Human-sponsored
       </span>
+      </Tilt>
     </div>
   );
 }

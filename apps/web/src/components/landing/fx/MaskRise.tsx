@@ -4,6 +4,7 @@ import { useRef, type ReactNode } from "react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useGSAP } from "@gsap/react";
+import { introHeld, whenIntroDone } from "@/lib/introGate";
 
 gsap.registerPlugin(ScrollTrigger, useGSAP);
 
@@ -24,19 +25,23 @@ export function MaskRise({
   const ref = useRef<HTMLDivElement>(null);
 
   useGSAP(
-    () => {
+    (_, contextSafe) => {
       const el = ref.current;
-      if (!el) return;
+      if (!el || !contextSafe) return;
       if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
 
-      gsap.from(el.querySelectorAll("[data-line]"), {
-        yPercent: 115,
-        duration: 1.05,
-        delay,
-        ease: "power4.out",
-        stagger: 0.12,
-        scrollTrigger: { trigger: el, start: "top 88%" },
+      const build = contextSafe(() => {
+        gsap.from(el.querySelectorAll("[data-line]"), {
+          yPercent: 115,
+          duration: 1.05,
+          delay,
+          ease: "power4.out",
+          stagger: 0.12,
+          scrollTrigger: { trigger: el, start: "top 88%" },
+        });
       });
+      if (introHeld()) whenIntroDone(build);
+      else build();
     },
     { scope: ref },
   );

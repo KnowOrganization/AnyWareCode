@@ -283,7 +283,18 @@ body {
   transform: scaleY(1);
 }
 
+/* custom cursor active — hide the native one everywhere on the landing page */
+html.awc-cursor,
+html.awc-cursor * {
+  cursor: none !important;
+}
+
 /* ── Keyframes ───────────────────────────────────────────────────────────── */
+@keyframes heroFieldIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
 @keyframes float {
   0%, 100% { transform: translateY(0); }
   50% { transform: translateY(-12px); }

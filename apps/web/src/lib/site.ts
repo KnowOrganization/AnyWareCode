@@ -140,6 +140,42 @@ export const steps: Step[] = [
   },
 ];
 
+export interface PipelineStage {
+  n: string;
+  title: string;
+  body: string;
+  /** Mono telemetry chip shown under the stage copy. */
+  chip: string;
+}
+
+/** Stages of the pinned 3D custody scene — one quarter of scroll each. */
+export const pipeline: PipelineStage[] = [
+  {
+    n: "01",
+    title: "Prompt",
+    body: "Type /code in any channel. A thread opens and the task is signed to a named human sponsor — nothing runs anonymously.",
+    chip: "/code fix the flaky retry test",
+  },
+  {
+    n: "02",
+    title: "Isolate",
+    body: "An ephemeral container seals around the task — non-root, every Linux capability dropped, egress allow-listed to Anthropic and GitHub only.",
+    chip: "container a1f3 · cap-drop ALL · egress 2 hosts",
+  },
+  {
+    n: "03",
+    title: "Work",
+    body: "The agent reads the repo, edits, runs the tests. Every step streams to the thread, and anyone in it can steer mid-task.",
+    chip: "14 files read · 6 edits · tests 42/42 ✓",
+  },
+  {
+    n: "04",
+    title: "Ship",
+    body: "A branch is pushed, a pull request opens carrying its provenance receipt, and the container is destroyed. A human merges — or hits Iterate.",
+    chip: "✓ PR #128 → anywherecode/a1f3 · container removed",
+  },
+];
+
 export interface SecurityPoint {
   title: string;
   body: string;

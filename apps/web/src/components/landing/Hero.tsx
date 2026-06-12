@@ -1,6 +1,7 @@
 import { Container } from "@/components/ui/Container";
 import { Reveal } from "@/components/Reveal";
 import { Magnetic } from "@/components/fx/Magnetic";
+import { HeroFieldLazy } from "@/components/three/HeroFieldLazy";
 import { MaskRise } from "./fx/MaskRise";
 import { Parallax } from "./fx/Parallax";
 import { Cta } from "./Cta";
@@ -9,11 +10,13 @@ import * as site from "@/lib/site";
 
 /**
  * Chapter 00 — the manifest cover. Oversized declaration on the left, the
- * provenance receipt artifact on the right.
+ * provenance receipt artifact on the right, the WebGL manifest grid breathing
+ * underneath.
  */
 export function Hero() {
   return (
     <section id="hero" className="relative pt-16">
+      <HeroFieldLazy />
       <Container>
         {/* Folio line */}
         <Reveal y={12}>
