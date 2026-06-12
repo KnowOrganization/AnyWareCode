@@ -50,8 +50,8 @@ export function ThreatModel() {
         <Reveal>
           <div className="mt-12 flex flex-col items-start justify-between gap-6 sm:flex-row sm:items-center">
             <p className="max-w-xl text-sm text-muted">
-              Quarantine for inbound issues, read-only tokens for verification
-              runs, egress allowlisted to Anthropic + GitHub.
+              In production the container can reach exactly two hosts:
+              Anthropic and GitHub.
             </p>
             <span className="stamp rotate-2">
               Designed after Comment &amp; Control

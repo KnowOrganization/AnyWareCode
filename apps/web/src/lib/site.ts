@@ -35,74 +35,69 @@ export const commands = [
   { cmd: "/config role", desc: "Choose who may invoke the agent" },
 ] as const;
 
-export interface Feature {
-  /** Lucide-free: a short emoji/glyph used as the icon. */
-  icon: string;
-  title: string;
+export interface LeadEntry {
+  /** Verb-led story beat. */
+  verb: string;
+  /** One-line summary always visible in the row. */
+  line: string;
+  /** Detail revealed on hover / focus (always visible on touch). */
   body: string;
-  accent: "indigo" | "violet" | "cyan" | "pink" | "mint" | "blurple";
 }
 
-export const features: Feature[] = [
+/** Chapter 01 — four entries carry the story; the annexes carry the rest. */
+export const leadEntries: LeadEntry[] = [
   {
-    icon: "⌗",
-    title: "/code → pull request",
-    body: "Type a task in any channel. The agent opens a thread, works in an isolated container, pushes a branch, and opens a PR with Merge / Iterate buttons.",
-    accent: "indigo",
+    verb: "Ship",
+    line: "/code → a reviewed pull request",
+    body: "Type a task in any channel. A thread opens, an isolated container does the work, and a PR lands with Merge / Iterate buttons. Your default branch is never touched.",
   },
   {
-    icon: "?",
-    title: "/ask, repo-aware",
-    body: "Read-only Q&A grounded in the connected repo. Looser monthly cap than /code because it never writes.",
-    accent: "cyan",
+    verb: "Answer",
+    line: "/ask — repo-aware, read-only",
+    body: "Questions grounded in the connected repo, answered in the channel. A looser cap than /code, because it never writes a thing.",
   },
   {
-    icon: "⇄",
-    title: "Shared threads",
-    body: "Anyone in the thread can steer mid-task. Replies forward straight into the live agent as new turns — pair-program as a team.",
-    accent: "violet",
+    verb: "Steer",
+    line: "the whole room pair-programs",
+    body: "Any reply in the thread forwards straight into the live run as a new turn. @mention the bot anywhere and it routes itself — a reply, an /ask, a /code run, or a proposal with Run buttons.",
   },
   {
-    icon: "@",
-    title: "@mention routing",
-    body: "Tag the bot anywhere. One classifier call routes to a plain reply, an /ask, a /code run, or a durable proposal with Run / Dismiss buttons.",
-    accent: "pink",
+    verb: "Guard",
+    line: "slop filtered before it costs a minute",
+    body: "Repro Gate verifies inbound bug reports in the sandbox before a human reads them. Quarantine strips hidden instructions from issues. Every PR carries its provenance receipt.",
+  },
+];
+
+export interface Annex {
+  title: string;
+  line: string;
+}
+
+/** The compact index under the lead entries. */
+export const annexes: Annex[] = [
+  {
+    title: "BYO LLM",
+    line: "Anthropic key, Claude Pro/Max token, or compatible endpoint — encrypted per server",
   },
   {
-    icon: "⚷",
-    title: "Bring your own LLM",
-    body: "Each server connects its own credential — Anthropic API key, a Claude Pro/Max subscription token, or any Anthropic-compatible endpoint. Encrypted at rest.",
-    accent: "mint",
-  },
-  {
-    icon: "▣",
-    title: "Hardened by default",
-    body: "Ephemeral non-root containers, read-only tokens for verification runs, and a quarantine layer that strips hidden instructions from inbound issues — designed after Comment and Control, not before it.",
-    accent: "blurple",
-  },
-  {
-    icon: "🔬",
-    title: "Repro Gate",
-    body: "Inbound bug reports get verified in the sandbox before a human spends a minute: symbols checked, snippets run, a verdict card posted. Your slop filter, not another slop source.",
-    accent: "mint",
-  },
-  {
-    icon: "🧾",
-    title: "Provenance receipts",
-    body: "Every agent PR names its human sponsor, plan approver, and steerers — with test evidence and a link to the public thread. The only AI contribution maintainers can audit.",
-    accent: "indigo",
-  },
-  {
-    icon: "⚔",
     title: "Squad Mode",
-    body: "Hard problem? Run N parallel attempts in separate sandboxes, compare diffs side by side, and let the server vote on which one ships.",
-    accent: "pink",
+    line: "N parallel attempts in separate sandboxes, the server votes",
   },
   {
-    icon: "🔌",
     title: "MCP extensions",
-    body: "Attach your Sentry, database, or tracker via Model Context Protocol — the agent runs with your context, role-gated and egress-allowlisted per connection.",
-    accent: "cyan",
+    line: "your Sentry, database, or tracker — role-gated per connection",
+  },
+  {
+    title: "Provenance receipts",
+    line: "sponsor, approver, steerers, evidence — on every PR",
+  },
+  {
+    title: "Hardened runtime",
+    line: "non-root containers, cap-drop ALL, allowlisted egress",
+  },
+  {
+    title: "Server Memory",
+    line: "conventions accumulate; /memory commit flows them into AGENTS.md",
   },
 ];
 
@@ -184,27 +179,27 @@ export interface SecurityPoint {
 export const securityPoints: SecurityPoint[] = [
   {
     title: "Repo content is untrusted",
-    body: "The agent is told to ignore instructions embedded in repo files — a prompt-injection defense baked into its system prompt.",
+    body: "Injection defense is in the system prompt — instructions embedded in repo files are ignored.",
   },
   {
     title: "Credentials never leak",
-    body: "Tokens travel over stdin, never as container env vars, and are stripped from every error path before any text can reach Discord.",
+    body: "Tokens travel over stdin and are stripped from every error path before text reaches Discord.",
   },
   {
     title: "AES-256-GCM at rest",
-    body: "Stored LLM keys are encrypted with a per-server key derived via HKDF; a guild's blob can't be copied to another server.",
+    body: "Keys are encrypted per server; one guild's blob can't decrypt for another.",
   },
   {
     title: "Isolated execution",
-    body: "Containers drop all Linux capabilities, run non-root with CPU/mem/PID caps, auto-remove, and in prod can only reach Anthropic + GitHub.",
+    body: "Non-root, every Linux capability dropped, CPU/mem/PID caps, removed on exit.",
   },
   {
     title: "Never pushes to main",
-    body: "Git happens in one place. The bot opens PRs on branch anywherecode/<taskId>; nothing ever pushes to your default branch.",
+    body: "All git lands on anywherecode/<taskId>. A human merges, or nothing does.",
   },
   {
     title: "You control access",
-    body: "Admins-only by default. Pick exactly which role may invoke the agent with /config role.",
+    body: "Admins only by default; grant exactly one role with /config role.",
   },
 ];
 
@@ -231,8 +226,7 @@ export const tiers: Tier[] = [
     features: [
       "30 pooled code tasks / mo",
       "Unlimited questions on public repos",
-      "Repro Gate — filter slop reports free",
-      "Maintainer-gated runs",
+      "Repro Gate — slop reports filtered free",
       "Apply with /oss apply",
     ],
     cta: "Add to Discord",
@@ -245,9 +239,8 @@ export const tiers: Tier[] = [
     period: "/mo",
     tagline: "One shared engineer for the whole server — no per-seat math.",
     features: [
-      "100 code tasks / mo",
+      "100 code tasks / mo · 2 concurrent",
       "400 questions / mo + Repro Gate",
-      "2 concurrent tasks",
       "Server Memory + Review agent",
       "Scheduled tasks + MCP extensions",
     ],
@@ -262,9 +255,8 @@ export const tiers: Tier[] = [
     period: "/mo",
     tagline: "For studios living in voice channels and shipping daily.",
     features: [
-      "500 code tasks / mo",
+      "500 code tasks / mo · 5 concurrent",
       "2,000 questions / mo",
-      "5 concurrent tasks",
       "Voice → PR Standup Mode",
       "Squad Mode + Spectate + previews",
     ],
@@ -289,43 +281,27 @@ export interface Faq {
 export const faqs: Faq[] = [
   {
     q: "Do you store my code?",
-    a: "No. Each task clones into an ephemeral container that is auto-removed when it exits. We persist only task history and usage counters — removing the bot deletes your server's data.",
+    a: "No. Each task clones into an ephemeral container that's removed when it exits. We keep only task history and usage counters — removing the bot deletes your server's data.",
   },
   {
     q: "Whose LLM key is used?",
-    a: "Yours. Every server connects its own credential, encrypted per-server with AES-256-GCM. The 14-day trial runs on a small platform allowance; after that, bring your own. An Anthropic API key is the recommended path for production servers.",
-  },
-  {
-    q: "What's a task pack?",
-    a: "Community-funded compute: any member can buy 50 extra code tasks for the server ($10), Discord-boost style — with public credit in the server. Packs sit in reserve and are spent after the monthly plan cap.",
-  },
-  {
-    q: "Why does the trial have requirements?",
-    a: "The trial runs on our key, so it's gated against farming: the server must be at least 30 days old with 5+ human members, and each GitHub org gets one trial. Connecting your own key skips all gates.",
-  },
-  {
-    q: "Which providers are supported?",
-    a: "An Anthropic API key, a Claude Pro/Max subscription token (claude setup-token), or any Anthropic-compatible endpoint such as a LiteLLM proxy.",
+    a: "Yours. Every server connects its own credential — an Anthropic API key, a Claude Pro/Max token, or any compatible endpoint — encrypted per server. The 14-day trial runs on ours.",
   },
   {
     q: "Can it push to my main branch?",
-    a: "Never. All git activity is confined to one place — it pushes to anywherecode/<taskId> and opens a pull request. Your default branch is never touched.",
-  },
-  {
-    q: "Who in my server can invoke it?",
-    a: "Admins only by default. Use /config role to grant a specific role access. @everyone and @here never trigger the bot.",
+    a: "Never. All git lands on anywherecode/<taskId> and arrives as a pull request. Nothing merges without a human.",
   },
   {
     q: "What about prompt injection from repos and issues?",
-    a: "All external content is treated as untrusted. Inbound issues and PRs pass a quarantine layer that strips HTML comments and invisible Unicode and flags instruction-like content on the card; verification runs hold read-only tokens; and the container is fully isolated. Designed after the Comment and Control disclosures, not before them.",
+    a: "Everything external is untrusted: quarantine strips hidden instructions from inbound issues, verification runs hold read-only tokens, and the container is sealed. Designed after the Comment and Control disclosures, not before them.",
+  },
+  {
+    q: "Who in my server can invoke it?",
+    a: "Admins only by default. Grant exactly one role with /config role. @everyone and @here never trigger it.",
   },
   {
     q: "Isn't this just more AI slop for maintainers?",
-    a: "The opposite, by construction: nothing runs without a named human sponsor, every PR carries a provenance receipt (who asked, who approved, who steered, what was verified), and Repro Gate filters incoming bug reports before they cost a human minute.",
-  },
-  {
-    q: "What's an AGENTS.md and why do you care?",
-    a: "The open per-repo conventions standard read by 20+ coding tools. AnyWareCode reads yours on every run, and /memory commit flows your server's accumulated conventions back into it via PR — your context improves every agent you use, not just ours.",
+    a: "The opposite, by construction: every run has a named human sponsor, every PR carries a provenance receipt, and Repro Gate filters bug reports before they cost a human minute.",
   },
 ];
 

@@ -52,12 +52,12 @@ export function Hero() {
 
             <Reveal stagger delay={0.35}>
               <p className="mt-7 max-w-xl text-base text-muted sm:text-lg">
-                One shared AI engineer for your whole server. Type{" "}
+                One AI engineer, shared by the whole server. Type{" "}
                 <code className="rounded-md border border-line-strong bg-surface px-1.5 py-0.5 font-mono text-[0.9em] text-primary">
                   /code
                 </code>{" "}
-                in any channel — it works the task in an isolated container,
-                opens a pull request, and waits for a human to merge.
+                in any channel — it works alone in a sealed container and
+                comes back with a pull request.
               </p>
 
               <p className="label-mono mt-4 max-w-xl text-faint">

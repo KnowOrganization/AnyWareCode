@@ -22,7 +22,7 @@ export function Receipts() {
               Per server, <span className="text-outline">not per seat</span>
             </>
           }
-          blurb="One subscription covers the whole community. 14-day trial on our key; after that every plan brings its own LLM credential."
+          blurb="One subscription, the whole server — no per-seat math. Fourteen days on our key; your credential after that."
         />
 
         <Reveal stagger className="mt-14 grid items-start gap-8 lg:grid-cols-3 lg:gap-6">

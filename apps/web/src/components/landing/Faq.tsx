@@ -38,7 +38,7 @@ export function Faq() {
                   +
                 </span>
               </summary>
-              <p className="pb-7 pl-12 pr-8 text-[0.95rem] leading-relaxed text-muted">
+              <p className="pb-7 pl-12 pr-8 text-[0.95rem] leading-relaxed text-muted group-open:animate-[fadeSlide_0.45s_ease_both]">
                 {f.a}
               </p>
             </details>

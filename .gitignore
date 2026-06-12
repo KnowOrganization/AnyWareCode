@@ -5,3 +5,4 @@ dist/
 *.log
 .DS_Store
 drizzle/meta/_journal.json.bak
+.next
