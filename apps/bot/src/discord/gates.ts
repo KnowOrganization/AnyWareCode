@@ -237,6 +237,20 @@ export async function ensureGuild(
     updates.subStatus = "free";
     updates.taskCap = 0;
     updates.concurrency = 1;
+  } else if (
+    existing.subSource === "discord" &&
+    existing.subStatus === "active" &&
+    existing.currentPeriodEnd &&
+    now.getTime() > existing.currentPeriodEnd.getTime() + DAY_MS
+  ) {
+    // Discord never reliably signals subscription end; the entitlement sweep
+    // normally refreshes/cancels first — this is the lazy backstop, with 24h
+    // of grace for a renewal event the sweep hasn't replayed yet.
+    updates.subStatus = "canceled";
+    updates.subSource = null;
+    updates.planId = null;
+    updates.taskCap = 0;
+    updates.concurrency = 1;
   }
 
   if (Object.keys(updates).length === 0) return existing;

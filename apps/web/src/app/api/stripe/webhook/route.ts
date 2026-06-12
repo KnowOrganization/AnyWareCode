@@ -5,6 +5,7 @@ import {
   applyGuildSubscription,
   findGuildByStripeCustomer,
   findPlanByStripePrice,
+  getGuild,
   recordTaskPackPurchase,
 } from "@anywherecode/db";
 import { db } from "@/lib/db";
@@ -13,9 +14,12 @@ import { PACK_TASKS, getStripe } from "@/lib/stripe";
 export const runtime = "nodejs";
 
 /**
- * The ONLY Stripe write surface. Verifies the signature, then projects
- * subscription lifecycle events onto the guild's billing columns. The bot reads
- * those columns for enforcement — it never talks to Stripe.
+ * The Stripe rail's only write surface. Verifies the signature, then projects
+ * subscription lifecycle events onto the guild's billing columns through the
+ * packages/db choke points (applyGuildSubscription / recordTaskPackPurchase) —
+ * the same funnels the bot's Discord-entitlement rail uses. Destructive
+ * writes are guarded by guilds.subSource so a stale Stripe event can't wipe
+ * a Discord-funded plan.
  */
 export async function POST(req: Request) {
   const sig = req.headers.get("stripe-signature");
@@ -69,9 +73,10 @@ export async function POST(req: Request) {
     case "customer.subscription.deleted": {
       const sub = event.data.object as Stripe.Subscription;
       const guildId = await guildIdFromCustomer(sub.customer);
-      if (guildId) {
+      if (guildId && (await stripeOwnsSub(guildId))) {
         await applyGuildSubscription(db, guildId, {
           subStatus: "canceled",
+          subSource: null,
           stripeSubscriptionId: null,
           planId: null,
           // Entitlements end with the subscription (packs survive untouched).
@@ -84,7 +89,7 @@ export async function POST(req: Request) {
     case "invoice.payment_failed": {
       const inv = event.data.object as Stripe.Invoice;
       const guildId = await guildIdFromCustomer(inv.customer);
-      if (guildId) {
+      if (guildId && (await stripeOwnsSub(guildId))) {
         await applyGuildSubscription(db, guildId, { subStatus: "past_due" });
       }
       break;
@@ -108,6 +113,12 @@ async function guildIdFromCustomer(
   return guild?.id ?? null;
 }
 
+/** Source guard: Stripe may only cancel/downgrade a Stripe-funded plan. */
+async function stripeOwnsSub(guildId: string): Promise<boolean> {
+  const guild = await getGuild(db, guildId);
+  return guild?.subSource !== "discord";
+}
+
 async function applyFromSubscription(
   guildId: string,
   sub: Stripe.Subscription,
@@ -127,6 +138,7 @@ async function applyFromSubscription(
     stripeCustomerId: custId,
     stripeSubscriptionId: sub.id,
     subStatus,
+    subSource: "stripe",
     planId: plan?.id ?? null,
     ...(plan ? { taskCap: plan.taskCap, concurrency: plan.concurrency } : {}),
     currentPeriodEnd: periodEnd(sub),

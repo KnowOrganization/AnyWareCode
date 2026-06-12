@@ -24,6 +24,11 @@ import {
   stripBotMention,
 } from "./discord/mentions.js";
 import { startPackAnnouncer } from "./discord/pack-announcer.js";
+import {
+  registerEntitlementHandlers,
+  startEntitlementSweeper,
+  sweepEntitlements,
+} from "./discord/premium.js";
 import { sweepExpiredProposals } from "./discord/proposals.js";
 import { startSquadSweeper, sweepSquads } from "./discord/squad.js";
 import { registerCommands } from "./discord/register.js";
@@ -80,6 +85,7 @@ const client = new Client({
 });
 const ctx: BotContext = { db, config, github, orchestrator, client };
 registerWebhookHandlers(ctx);
+registerEntitlementHandlers(ctx);
 
 client.on(Events.ClientReady, async (ready) => {
   log.info(`Logged in as ${ready.user.tag}`);
@@ -99,6 +105,11 @@ client.on(Events.ClientReady, async (ready) => {
   // After recovery has settled stale attempts, finalize any orphaned squads.
   await sweepSquads(ctx);
   startSquadSweeper(ctx);
+  // Premium Apps reconciliation: replay entitlements missed while offline.
+  await sweepEntitlements(ctx).catch((err) =>
+    captureError(err, { msg: "entitlement boot sweep failed" }),
+  );
+  startEntitlementSweeper(ctx);
 });
 
 // Bot removed from a server: erase the guild's data (privacy + housekeeping).

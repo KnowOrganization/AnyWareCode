@@ -110,7 +110,11 @@ export default async function GuildPage({
               </div>
             </div>
             <div className="mt-6">
-              <BillingButtons guildId={guildId} isActive={view.status === "active"} />
+              <BillingButtons
+                guildId={guildId}
+                isActive={view.status === "active"}
+                managedInDiscord={guild.subSource === "discord"}
+              />
             </div>
           </GlassCard>
 

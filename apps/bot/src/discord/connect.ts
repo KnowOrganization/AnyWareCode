@@ -292,29 +292,52 @@ export async function handleBillingCommand(
   );
   lines.push(`🔋 Pack balance: ${plan.packRemaining} task(s).`);
 
-  const buttons: ButtonBuilder[] = [];
+  const rows: ActionRowBuilder<ButtonBuilder>[] = [];
+  // Native Discord checkout when SKUs are configured (Premium Apps rail).
+  const premiumButtons: ButtonBuilder[] = [];
+  const subscribed = plan.status === "active";
+  if (!subscribed && ctx.config.DISCORD_SKU_PRO) {
+    premiumButtons.push(
+      new ButtonBuilder().setStyle(ButtonStyle.Premium).setSKUId(ctx.config.DISCORD_SKU_PRO),
+    );
+  }
+  if (!subscribed && ctx.config.DISCORD_SKU_STUDIO) {
+    premiumButtons.push(
+      new ButtonBuilder().setStyle(ButtonStyle.Premium).setSKUId(ctx.config.DISCORD_SKU_STUDIO),
+    );
+  }
+  if (ctx.config.DISCORD_SKU_PACK) {
+    premiumButtons.push(
+      new ButtonBuilder().setStyle(ButtonStyle.Premium).setSKUId(ctx.config.DISCORD_SKU_PACK),
+    );
+  }
+  if (premiumButtons.length > 0) {
+    rows.push(
+      new ActionRowBuilder<ButtonBuilder>().addComponents(...premiumButtons),
+    );
+  }
   if (ctx.config.WEB_URL) {
-    buttons.push(
-      new ButtonBuilder()
-        .setStyle(ButtonStyle.Link)
-        .setLabel(plan.status === "active" ? "Manage billing" : "Upgrade")
-        .setURL(`${ctx.config.WEB_URL}/dashboard/${guildId}`),
-      new ButtonBuilder()
-        .setStyle(ButtonStyle.Link)
-        .setLabel("Buy a task pack 🔋")
-        .setURL(`${ctx.config.WEB_URL}/packs/${guildId}`),
+    rows.push(
+      new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder()
+          .setStyle(ButtonStyle.Link)
+          .setLabel(
+            subscribed && guild.subSource !== "discord"
+              ? "Manage billing"
+              : "Web dashboard",
+          )
+          .setURL(`${ctx.config.WEB_URL}/dashboard/${guildId}`),
+        new ButtonBuilder()
+          .setStyle(ButtonStyle.Link)
+          .setLabel("Buy a task pack 🔋")
+          .setURL(`${ctx.config.WEB_URL}/packs/${guildId}`),
+      ),
     );
   }
 
   await interaction.reply({
     content: lines.join("\n"),
-    ...(buttons.length > 0
-      ? {
-          components: [
-            new ActionRowBuilder<ButtonBuilder>().addComponents(...buttons),
-          ],
-        }
-      : {}),
+    ...(rows.length > 0 ? { components: rows } : {}),
     flags: MessageFlags.Ephemeral,
   });
 }
