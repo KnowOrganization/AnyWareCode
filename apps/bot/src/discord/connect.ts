@@ -73,8 +73,12 @@ async function handleConnectGithub(
 
   const removeLogin = interaction.options.getString("remove")?.toLowerCase();
   if (removeLogin) {
+    // Match by login, or by installation id — pre-multi-install rows may
+    // carry an empty login and would otherwise be unremovable.
     const target = linked.find(
-      (i) => i.accountLogin.toLowerCase() === removeLogin,
+      (i) =>
+        i.accountLogin.toLowerCase() === removeLogin ||
+        String(i.installationId) === removeLogin,
     );
     if (!target) {
       await interaction.reply({
