@@ -7,6 +7,7 @@ import { and, eq } from "drizzle-orm";
 import { schema, type RepoSettings } from "@anywherecode/db";
 import { captureError, log } from "../observability.js";
 import type { WebhookDeps } from "../github/webhooks.js";
+import { quarantine } from "../security/quarantine.js";
 import { createProposal, setProposalMessageId } from "./proposals.js";
 import { truncate } from "./launch.js";
 
@@ -83,8 +84,15 @@ export async function handleIssueEvent(
   deps: WebhookDeps,
   installationId: number,
   repoFullName: string,
-  issue: IssueInfo,
+  rawIssue: IssueInfo,
 ): Promise<void> {
+  // Quarantine before anything is built from the text: strip hidden-content
+  // carriers, keep the injection flags for the card + audit trail.
+  const title = quarantine(rawIssue.title);
+  const body = quarantine(rawIssue.body);
+  const issue: IssueInfo = { ...rawIssue, title: title.text, body: body.text };
+  const flags = [...new Set([...title.flags, ...body.flags])];
+
   const guilds = await deps.db.query.guilds.findMany({
     where: eq(schema.guilds.githubInstallationId, installationId),
   });
@@ -139,6 +147,7 @@ export async function handleIssueEvent(
         repoFullName,
         source: "issue",
         issueNumber: issue.number,
+        flags,
         ttlMs: deps.config.ISSUE_PROPOSAL_TTL_HOURS * 3_600_000,
       });
 
@@ -154,6 +163,11 @@ export async function handleIssueEvent(
           content: [
             `🐛 **Issue #${issue.number}** in \`${repoFullName}\`: ${truncate(issue.title, 150)}`,
             `> ${truncate(issue.body || "(no description)", 240)}`,
+            ...(flags.length > 0
+              ? [
+                  `⚠️ **This issue contains hidden or instruction-like content** (${flags.join(", ")}) — it was stripped before reaching the agent. Run with care.`,
+                ]
+              : []),
             `<https://github.com/${repoFullName}/issues/${issue.number}>`,
           ].join("\n"),
           components: [

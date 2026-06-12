@@ -66,6 +66,13 @@ export const guilds = pgTable("guilds", {
   stripeCustomerId: text("stripe_customer_id"),
   stripeSubscriptionId: text("stripe_subscription_id"),
   subStatus: subscriptionStatus("sub_status").notNull().default("trialing"),
+  /** Which billing rail owns the subscription; cancel paths guard on it so a
+   * stale event from one rail can't wipe the other rail's plan. */
+  subSource: text("sub_source", { enum: ["stripe", "discord"] }),
+  /** Code tasks require the sponsoring member to have run /link github. */
+  requireLinkedSponsor: boolean("require_linked_sponsor")
+    .notNull()
+    .default(false),
   trialEndsAt: timestamp("trial_ends_at", { withTimezone: true }),
   currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }),
   /** OSS Community tier application state. */
@@ -145,6 +152,12 @@ export const tasks = pgTable("tasks", {
   fundedBy: text("funded_by", { enum: ["plan", "pack"] })
     .notNull()
     .default("plan"),
+  /** Provenance: who approved the plan vote (null = instant mode). */
+  planApprovedBy: text("plan_approved_by"),
+  /** Per-file change stats; lets squad vote cards rebuild after a restart. */
+  diffSummary: jsonb("diff_summary").$type<
+    Array<{ path: string; additions: number; deletions: number }>
+  >(),
   /** Discord message id of the PR card (Preview button edits it in place). */
   prMessageId: text("pr_message_id"),
   previewUrl: text("preview_url"),
@@ -190,6 +203,8 @@ export const proposals = pgTable("proposals", {
   planText: text("plan_text"),
   /** Discord message id of the card (reaction approval + in-place edits). */
   messageId: text("message_id"),
+  /** Quarantine injection flags found in the source content (audit trail). */
+  flags: jsonb("flags").$type<string[]>().notNull().default([]),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
@@ -267,6 +282,8 @@ export const repoSettings = pgTable(
     issueCountDate: timestamp("issue_count_date", { withTimezone: true }),
     autoReview: boolean("auto_review").notNull().default(false),
     reviewChannelId: text("review_channel_id"),
+    /** Repro Gate: verify inbound issues in the sandbox before humans triage. */
+    reproGate: boolean("repro_gate").notNull().default(false),
     /** Consecutive Discord post failures; feed disables itself at 3. */
     failCount: integer("fail_count").notNull().default(0),
   },
@@ -325,6 +342,58 @@ export const memorySuggestions = pgTable("memory_suggestions", {
     .defaultNow(),
 });
 
+/** Provenance: a member's verified GitHub identity (login only — the OAuth
+ * token is discarded the moment the login is fetched). User-keyed, so it
+ * survives guild deletion. */
+export const userLinks = pgTable("user_links", {
+  discordUserId: text("discord_user_id").primaryKey(),
+  githubLogin: text("github_login").notNull(),
+  verifiedAt: timestamp("verified_at", { withTimezone: true }).notNull(),
+});
+
+/** Per-server MCP extensions attached to agent runs (remote http/sse only). */
+export const mcpServers = pgTable(
+  "mcp_servers",
+  {
+    guildId: text("guild_id").notNull(),
+    /** Tool namespace: tools surface as mcp__<name>__<tool>. */
+    name: text("name").notNull(),
+    type: text("type", { enum: ["http", "sse"] }).notNull().default("http"),
+    url: text("url").notNull(),
+    /** AES-256-GCM blob (AAD = guildId); decrypted only into TaskSpec stdin. */
+    authHeaderEnc: text("auth_header_enc"),
+    enabled: boolean("enabled").notNull().default(true),
+    createdBy: text("created_by").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.guildId, t.name] })],
+);
+
+/** Squad Mode: N parallel attempts, the server picks the winner. Durable so
+ * the vote card is rebuildable after a restart. */
+export const squads = pgTable("squads", {
+  id: text("id").primaryKey(),
+  guildId: text("guild_id").notNull(),
+  channelId: text("channel_id").notNull(),
+  repoFullName: text("repo_full_name").notNull(),
+  prompt: text("prompt").notNull(),
+  requestedBy: text("requested_by").notNull(),
+  attemptTaskIds: jsonb("attempt_task_ids").$type<string[]>().notNull(),
+  status: text("status", {
+    enum: ["running", "voting", "shipped", "failed", "expired"],
+  })
+    .notNull()
+    .default("running"),
+  voteMessageId: text("vote_message_id"),
+  winnerTaskId: text("winner_task_id"),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
 /** Spectate Stage B event log (deferred feature; table ships now so the
  * protocol release doesn't need a second migration). */
 export const taskEvents = pgTable("task_events", {
@@ -349,3 +418,6 @@ export type RepoSettings = typeof repoSettings.$inferSelect;
 export type Schedule = typeof schedules.$inferSelect;
 export type ServerMemory = typeof serverMemories.$inferSelect;
 export type MemorySuggestion = typeof memorySuggestions.$inferSelect;
+export type UserLink = typeof userLinks.$inferSelect;
+export type McpServerRow = typeof mcpServers.$inferSelect;
+export type Squad = typeof squads.$inferSelect;

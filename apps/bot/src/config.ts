@@ -65,6 +65,19 @@ const configSchema = z.object({
   TRIAL_MIN_HUMAN_MEMBERS: z.coerce.number().int().default(5),
   /** GitHub App webhook secret; unset = /github/webhook disabled. */
   GITHUB_WEBHOOK_SECRET: z.string().min(16).optional(),
+  /** GitHub App OAuth client (user identity linking); unset = /link github off. */
+  GITHUB_CLIENT_ID: z.string().min(1).optional(),
+  GITHUB_CLIENT_SECRET: z.string().min(1).optional(),
+  /** Discord Premium Apps SKU ids; unset = the Discord billing rail is inert. */
+  DISCORD_SKU_PRO: z.string().min(1).optional(),
+  DISCORD_SKU_STUDIO: z.string().min(1).optional(),
+  DISCORD_SKU_PACK: z.string().min(1).optional(),
+  /** Hostnames admins may point /connect mcp at; empty = any (dev only). */
+  MCP_HOST_ALLOWLIST: z.string().default(""),
+  /** Max parallel attempts per /code squad run. */
+  SQUAD_MAX: z.coerce.number().int().min(2).max(5).default(3),
+  /** Hours a squad vote card stays shippable. */
+  SQUAD_VOTE_TTL_HOURS: z.coerce.number().int().default(24),
   /** Hours an issue-feed proposal's Run button stays valid. */
   ISSUE_PROPOSAL_TTL_HOURS: z.coerce.number().int().default(72),
   /** Hours a scheduled-task proposal's Run button stays valid. */

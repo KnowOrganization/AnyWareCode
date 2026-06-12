@@ -35,6 +35,8 @@ export async function createProposal(
     issueNumber?: number;
     scheduleId?: string;
     planText?: string;
+    /** Quarantine injection flags from the source content (audit trail). */
+    flags?: string[];
     /** Defaults to the chat-proposal TTL. */
     ttlMs?: number;
   },
@@ -53,6 +55,7 @@ export async function createProposal(
     issueNumber: args.issueNumber ?? null,
     scheduleId: args.scheduleId ?? null,
     planText: args.planText ?? null,
+    flags: args.flags ?? [],
     expiresAt: new Date(
       Date.now() +
         (args.ttlMs ?? ctx.config.CHAT_PROPOSAL_TTL_MINUTES * 60_000),

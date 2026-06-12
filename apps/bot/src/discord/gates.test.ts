@@ -27,6 +27,8 @@ function guildRow(overrides: Partial<Guild> = {}): Guild {
     stripeCustomerId: null,
     stripeSubscriptionId: null,
     subStatus: "active",
+    subSource: null,
+    requireLinkedSponsor: false,
     trialEndsAt: null,
     currentPeriodEnd: null,
     ossStatus: "none",

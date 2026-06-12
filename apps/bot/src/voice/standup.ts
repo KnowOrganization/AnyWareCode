@@ -19,6 +19,7 @@ import { schema } from "@anywherecode/db";
 import { resolveLlmAuth } from "../llm/credentials.js";
 import { extractActionItems } from "../llm/standup.js";
 import { captureError, log } from "../observability.js";
+import { sanitizeUntrusted } from "../security/quarantine.js";
 import { canInvoke, ensureGuild, resolveTier } from "../discord/gates.js";
 import type { BotContext } from "../discord/interactions.js";
 import { truncate } from "../discord/launch.js";
@@ -201,7 +202,8 @@ async function captureAndTranscribe(
   const member = await voiceChannel.guild.members.fetch(userId).catch(() => null);
   session.transcript.push({
     speaker: member?.displayName ?? "someone",
-    text,
+    // Whisper output is untrusted speech; same quarantine as written input.
+    text: sanitizeUntrusted(text).text,
     ts: Date.now(),
   });
 }

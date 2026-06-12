@@ -47,8 +47,13 @@ export async function deleteGuildData(db: Db, guildId: string): Promise<void> {
   await db
     .delete(schema.memorySuggestions)
     .where(eq(schema.memorySuggestions.guildId, guildId));
+  await db
+    .delete(schema.mcpServers)
+    .where(eq(schema.mcpServers.guildId, guildId));
+  await db.delete(schema.squads).where(eq(schema.squads.guildId, guildId));
   // github_org_trials intentionally survives guild deletion: the org's trial
   // is consumed forever (re-adding the bot must not grant a fresh trial).
+  // user_links is user-keyed, not guild-keyed — it survives too.
   await db.delete(schema.guilds).where(eq(schema.guilds.id, guildId));
 }
 
@@ -61,8 +66,9 @@ export async function findPlanByStripePrice(db: Db, priceId: string) {
   );
 }
 
-/** Apply a Stripe subscription change to a guild. The effective cap is copied
- * onto guilds.taskCap so the bot's capState needs no plan join in the hot path. */
+/** Apply a subscription change (Stripe webhook OR Discord entitlements — the
+ * single billing choke point) to a guild. The effective cap is copied onto
+ * guilds.taskCap so the bot's capState needs no plan join in the hot path. */
 export async function applyGuildSubscription(
   db: Db,
   guildId: string,
@@ -70,6 +76,7 @@ export async function applyGuildSubscription(
     stripeCustomerId?: string;
     stripeSubscriptionId?: string | null;
     subStatus: "active" | "past_due" | "canceled" | "free";
+    subSource?: "stripe" | "discord" | null;
     planId?: string | null;
     taskCap?: number;
     concurrency?: number;
@@ -292,4 +299,7 @@ export type {
   Schedule,
   ServerMemory,
   MemorySuggestion,
+  UserLink,
+  McpServerRow,
+  Squad,
 } from "./schema.js";
