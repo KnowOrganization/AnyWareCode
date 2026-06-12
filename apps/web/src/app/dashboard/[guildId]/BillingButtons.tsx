@@ -56,9 +56,9 @@ export function BillingButtons({
       <Button
         variant="secondary"
         disabled={busy}
-        onClick={() => go("/api/checkout", { guildId, plan: "team" })}
+        onClick={() => go("/api/checkout", { guildId, plan: "studio" })}
       >
-        Team — $50/mo
+        Studio — $50/mo
       </Button>
     </div>
   );

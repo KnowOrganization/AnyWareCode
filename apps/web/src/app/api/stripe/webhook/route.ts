@@ -1,12 +1,14 @@
+import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import type Stripe from "stripe";
 import {
   applyGuildSubscription,
   findGuildByStripeCustomer,
   findPlanByStripePrice,
+  recordTaskPackPurchase,
 } from "@anywherecode/db";
 import { db } from "@/lib/db";
-import { getStripe } from "@/lib/stripe";
+import { PACK_TASKS, getStripe } from "@/lib/stripe";
 
 export const runtime = "nodejs";
 
@@ -35,6 +37,20 @@ export async function POST(req: Request) {
     case "checkout.session.completed": {
       const s = event.data.object as Stripe.Checkout.Session;
       const guildId = s.metadata?.guildId;
+      // One-time payment + task_pack metadata = a pack purchase; idempotent on
+      // the session id, so Stripe retries/replays never double-credit.
+      if (s.mode === "payment" && s.metadata?.kind === "task_pack" && guildId) {
+        await recordTaskPackPurchase(db, {
+          id: randomUUID(),
+          guildId,
+          purchasedBy: s.metadata.purchasedBy ?? "unknown",
+          purchaserName: s.metadata.purchaserName ?? "a member",
+          tasks: PACK_TASKS,
+          amountCents: s.amount_total ?? 0,
+          stripeCheckoutSessionId: s.id,
+        });
+        break;
+      }
       const subId = typeof s.subscription === "string" ? s.subscription : s.subscription?.id;
       if (guildId && subId) {
         const sub = await stripe.subscriptions.retrieve(subId);
@@ -58,6 +74,9 @@ export async function POST(req: Request) {
           subStatus: "canceled",
           stripeSubscriptionId: null,
           planId: null,
+          // Entitlements end with the subscription (packs survive untouched).
+          taskCap: 0,
+          concurrency: 1,
         });
       }
       break;
@@ -109,7 +128,7 @@ async function applyFromSubscription(
     stripeSubscriptionId: sub.id,
     subStatus,
     planId: plan?.id ?? null,
-    ...(plan ? { taskCap: plan.taskCap } : {}),
+    ...(plan ? { taskCap: plan.taskCap, concurrency: plan.concurrency } : {}),
     currentPeriodEnd: periodEnd(sub),
   });
 }

@@ -33,3 +33,17 @@ export async function userManagesGuild(
   const managed = await fetchManagedGuilds(accessToken);
   return managed.some((g) => g.id === guildId);
 }
+
+/** Plain membership — task packs are buyable by ANY member, not just admins. */
+export async function userInGuild(
+  accessToken: string,
+  guildId: string,
+): Promise<boolean> {
+  const res = await fetch("https://discord.com/api/v10/users/@me/guilds", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    cache: "no-store",
+  });
+  if (!res.ok) return false;
+  const all = (await res.json()) as DiscordGuild[];
+  return all.some((g) => g.id === guildId);
+}

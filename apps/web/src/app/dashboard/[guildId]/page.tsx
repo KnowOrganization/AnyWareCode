@@ -147,6 +147,16 @@ export default async function GuildPage({
                 />
               </div>
             </div>
+            <p className="mt-5 text-sm text-muted">
+              🔋 {view.packRemaining} pack task(s) in reserve —{" "}
+              <Link
+                href={`/packs/${guildId}`}
+                className="text-violet hover:text-fg"
+              >
+                any member can add more
+              </Link>
+              .
+            </p>
           </GlassCard>
 
           {/* Repo bindings */}

@@ -14,9 +14,9 @@ export async function POST(req: Request) {
   }
   const { guildId, plan } = (await req.json()) as {
     guildId?: string;
-    plan?: "pro" | "team";
+    plan?: "pro" | "studio";
   };
-  if (!guildId || (plan !== "pro" && plan !== "team")) {
+  if (!guildId || (plan !== "pro" && plan !== "studio")) {
     return NextResponse.json({ error: "Bad request" }, { status: 400 });
   }
   if (!(await userManagesGuild(session.accessToken, guildId))) {
