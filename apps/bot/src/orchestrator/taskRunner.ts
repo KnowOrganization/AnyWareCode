@@ -14,6 +14,7 @@ import {
 } from "@anywherecode/shared";
 import type { Config } from "../config.js";
 import { schema, type Db } from "@anywherecode/db";
+import { maybeSuggestMemory } from "../discord/memorySuggestions.js";
 import type { GitHubService } from "../github/app.js";
 import { isAuthError, resolveLlmAuth } from "../llm/credentials.js";
 import { log } from "../observability.js";
@@ -48,6 +49,8 @@ interface ActiveTask {
   guildId: string;
   mode: "code" | "ask";
   fundedBy: FundedBy;
+  /** Forwarded thread replies — fuel for post-task memory suggestions. */
+  corrections: Array<{ author: string; text: string }>;
   /** Null until the container starts (e.g. while queued behind another task). */
   handle: WorkspaceHandle | null;
   /** Set when the task is being stopped, so the run loop reports it correctly. */
@@ -77,9 +80,10 @@ export class TaskOrchestrator {
   }
 
   forwardThreadMessage(threadId: string, author: string, text: string): void {
-    this.active
-      .get(threadId)
-      ?.handle?.send({ type: "user_message", author, text });
+    const task = this.active.get(threadId);
+    if (!task) return;
+    task.corrections.push({ author, text });
+    task.handle?.send({ type: "user_message", author, text });
   }
 
   async cancel(threadId: string): Promise<boolean> {
@@ -120,6 +124,7 @@ export class TaskOrchestrator {
       guildId: params.guildId,
       mode: params.mode,
       fundedBy: params.fundedBy ?? "plan",
+      corrections: [],
       handle: null,
       terminalReason: null,
       llmSource: null,
@@ -359,6 +364,18 @@ export class TaskOrchestrator {
         ),
       ],
     });
+
+    // Corrections happened mid-run → offer to save them as Server Memory.
+    void maybeSuggestMemory(
+      { db: this.db, config: this.config },
+      {
+        guildId: params.guildId,
+        repoFullName: params.repoFullName,
+        taskPrompt: params.prompt,
+        corrections: task.corrections,
+        thread,
+      },
+    ).catch((err) => log.warn({ err }, "memory suggestion failed"));
   }
 
   private reasonOf(task: ActiveTask): TerminalReason | null {

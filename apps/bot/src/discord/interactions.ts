@@ -24,6 +24,7 @@ import {
 } from "./connect.js";
 import { checkTaskPreconditions, launchTask, truncate } from "./launch.js";
 import { handleMemoryCommand, handleMemoryModal } from "./memory.js";
+import { handleMemorySuggestionButton } from "./memorySuggestions.js";
 import { handleOssCommand } from "./oss.js";
 import { handleProposalButton } from "./proposals.js";
 import { welcomeMessage } from "./welcome.js";
@@ -344,6 +345,15 @@ async function handleButton(
   if (action === "llm") {
     const subAction = parts[2] ?? "";
     await handleLlmButton(ctx, interaction, subAction);
+    return;
+  }
+
+  // Memory-suggestion cards carry their own row id
+  if (action === "memsug") {
+    const sub = parts[2];
+    const suggestionId = parts[3];
+    if ((sub !== "save" && sub !== "dismiss") || !suggestionId) return;
+    await handleMemorySuggestionButton(ctx, interaction, sub, suggestionId);
     return;
   }
 

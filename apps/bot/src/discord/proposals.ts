@@ -209,9 +209,11 @@ async function stripButtons(interaction: ButtonInteraction): Promise<void> {
   await interaction.message.edit({ components: [] }).catch(() => {});
 }
 
-/** Boot housekeeping: drop long-dead proposal rows. */
+/** Boot housekeeping: drop long-dead proposal + memory-suggestion rows. */
 export async function sweepExpiredProposals(db: Db): Promise<void> {
+  const cutoff = new Date(Date.now() - 7 * 86_400_000);
+  await db.delete(schema.proposals).where(lt(schema.proposals.expiresAt, cutoff));
   await db
-    .delete(schema.proposals)
-    .where(lt(schema.proposals.expiresAt, new Date(Date.now() - 7 * 86_400_000)));
+    .delete(schema.memorySuggestions)
+    .where(lt(schema.memorySuggestions.expiresAt, cutoff));
 }
