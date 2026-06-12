@@ -11,7 +11,10 @@ import { and, eq } from "drizzle-orm";
 import { schema, type Guild } from "@anywherecode/db";
 import { canInvoke, ensureGuild, resolveTier } from "./gates.js";
 import type { BotContext } from "./interactions.js";
+import { checkTaskPreconditions, launchTask } from "./launch.js";
 import { memoryTemplates } from "./memoryTemplates.js";
+import { maybeRequirePlanVote } from "./plan-votes.js";
+import { setProposalMessageId } from "./proposals.js";
 
 /**
  * Server Memory: a per-repo conventions doc, loaded into every agent run.
@@ -152,6 +155,78 @@ export async function handleMemoryCommand(
     }
     await saveMemory(ctx, guildId, repoFullName, next, interaction.user.id);
     await interaction.reply(`📚 Added to \`${repoFullName}\` memory: ${rule}`);
+    return;
+  }
+
+  if (sub === "commit") {
+    // AGENTS.md interop: conventions captured in Discord flow back to the
+    // repo, where every standards-aware agent can read them. Full code-task
+    // pipeline — plan votes, receipts, PR review all apply.
+    const content = await loadMemory(ctx, guildId, repoFullName);
+    if (!content.trim()) {
+      await interaction.reply({
+        content: "Server Memory is empty — nothing to commit. Add rules first.",
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+    const prompt = [
+      `Merge the following team conventions into the AGENTS.md file at the repository root (create it if missing). Preserve any existing AGENTS.md content and structure; integrate these rules where they fit, dedupe against rules already present, and keep the file readable:`,
+      "<conventions>",
+      content,
+      "</conventions>",
+    ].join("\n");
+    const pre = await checkTaskPreconditions(
+      ctx,
+      guild,
+      interaction.member,
+      "code",
+      { channelId: interaction.channelId },
+      prompt,
+    );
+    if (!pre.ok) {
+      await interaction.reply({ content: pre.reason, flags: MessageFlags.Ephemeral });
+      return;
+    }
+    const decision = await maybeRequirePlanVote(ctx, {
+      guild,
+      authorId: interaction.user.id,
+      repoFullName: pre.repoFullName,
+      channelId: interaction.channelId,
+      prompt,
+      summary: "Commit Server Memory to AGENTS.md",
+    });
+    if (decision.kind === "vote") {
+      await interaction.reply({
+        content: decision.card.content ?? "",
+        components: decision.card.components ?? [],
+        allowedMentions: { parse: [] },
+      });
+      const card = await interaction.fetchReply();
+      await setProposalMessageId(ctx.db, decision.proposalId, card.id);
+      return;
+    }
+    await interaction.reply(
+      `📚→📦 **${pre.repoFullName}** — committing Server Memory to AGENTS.md`,
+    );
+    const reply = await interaction.fetchReply();
+    await launchTask(ctx, {
+      guildId,
+      installationId: pre.installationId,
+      repoFullName: pre.repoFullName,
+      channelId: interaction.channelId,
+      mode: "code",
+      prompt,
+      requestedBy: interaction.user.username,
+      requestedById: interaction.user.id,
+      thread: {
+        kind: "create",
+        client: interaction.client,
+        channelId: interaction.channelId,
+        anchorMessageId: reply.id,
+        name: "code: commit memory to AGENTS.md",
+      },
+    });
     return;
   }
 

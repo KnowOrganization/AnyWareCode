@@ -89,6 +89,11 @@ export const commands = [
     )
     .addSubcommand((sub) =>
       sub
+        .setName("commit")
+        .setDescription("Open a PR merging this memory into the repo's AGENTS.md"),
+    )
+    .addSubcommand((sub) =>
+      sub
         .setName("template")
         .setDescription("Start from a template")
         .addStringOption((opt) =>
