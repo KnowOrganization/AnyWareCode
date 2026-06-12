@@ -243,6 +243,7 @@ export class TaskOrchestrator {
       resumeBranch: Boolean(params.iterate),
       githubToken: token,
       llmAuth: resolved.auth,
+      mcpServers: [],
       ...(memoryRow?.content.trim() ? { memory: memoryRow.content } : {}),
     };
 

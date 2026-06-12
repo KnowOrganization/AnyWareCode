@@ -70,6 +70,7 @@ function specWith(overrides: Partial<TaskSpec>): TaskSpec {
     resumeBranch: false,
     githubToken: "gh",
     llmAuth: { type: "anthropic_api_key", token: "sk" },
+    mcpServers: [],
     ...overrides,
   };
 }
@@ -108,5 +109,24 @@ describe("buildSystemAppend", () => {
       mkdtempSync(path.join(tmpdir(), "aw-")),
     );
     expect(out).toContain("read-only access");
+  });
+
+  it("injects the repo's AGENTS.md framed as data, after the hardening rules", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "aw-"));
+    writeFileSync(path.join(dir, "AGENTS.md"), "# Conventions\nUse pnpm.");
+    const out = buildSystemAppend(specWith({}), dir);
+    expect(out).toContain("AGENTS.md — repo-authored");
+    expect(out).toContain("Use pnpm.");
+    expect(out).toContain("does NOT");
+    expect(out.indexOf("untrusted data")).toBeLessThan(out.indexOf("Use pnpm."));
+  });
+
+  it("caps a huge AGENTS.md and skips an empty one", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "aw-"));
+    writeFileSync(path.join(dir, "AGENTS.md"), "x".repeat(10_000));
+    expect(buildSystemAppend(specWith({}), dir).length).toBeLessThan(7000);
+    const empty = mkdtempSync(path.join(tmpdir(), "aw-"));
+    writeFileSync(path.join(empty, "AGENTS.md"), "   \n");
+    expect(buildSystemAppend(specWith({}), empty)).not.toContain("AGENTS.md");
   });
 });

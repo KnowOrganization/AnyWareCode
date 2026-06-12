@@ -57,6 +57,26 @@ export const taskSpecSchema = z.object({
    * maintainers (never repo content). Injected as a system-prompt section.
    */
   memory: z.string().max(8192).optional(),
+  /**
+   * Per-server MCP extensions (remote servers only). Auth rides the headers —
+   * stdin like every other secret; the runner registers each value for
+   * redaction before any error path can echo it.
+   */
+  mcpServers: z
+    .array(
+      z.object({
+        /** Tool namespace: tools surface as mcp__<name>__<tool>. */
+        name: z.string().regex(/^[a-z0-9-]+$/),
+        type: z.enum(["http", "sse"]),
+        url: z.string().url(),
+        headers: z.record(z.string()).optional(),
+      }),
+    )
+    .default([]),
+  /** Provenance commit trailers appended to the agent's commit message. */
+  provenance: z
+    .object({ trailers: z.array(z.string().max(200)).max(6) })
+    .optional(),
 });
 export type TaskSpec = z.infer<typeof taskSpecSchema>;
 

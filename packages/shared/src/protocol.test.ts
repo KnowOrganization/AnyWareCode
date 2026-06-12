@@ -113,6 +113,32 @@ describe("task spec", () => {
     ).toThrow();
   });
 
+  it("accepts MCP servers and provenance trailers, defaulting both", () => {
+    const bare = taskSpecSchema.parse(base);
+    expect(bare.mcpServers).toEqual([]);
+    expect(bare.provenance).toBeUndefined();
+    const spec = taskSpecSchema.parse({
+      ...base,
+      mcpServers: [
+        {
+          name: "sentry",
+          type: "http",
+          url: "https://mcp.sentry.dev/mcp",
+          headers: { authorization: "Bearer x" },
+        },
+      ],
+      provenance: { trailers: ["Initiated-by: discord:mo"] },
+    });
+    expect(spec.mcpServers[0]?.name).toBe("sentry");
+    expect(spec.provenance?.trailers).toHaveLength(1);
+    expect(() =>
+      taskSpecSchema.parse({
+        ...base,
+        mcpServers: [{ name: "Bad Name!", type: "http", url: "https://x.dev" }],
+      }),
+    ).toThrow();
+  });
+
   it("accepts a memory doc and strips unknown fields (old-runner safety)", () => {
     const spec = taskSpecSchema.parse({
       ...base,

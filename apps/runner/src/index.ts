@@ -25,6 +25,11 @@ async function main(): Promise<void> {
   // Register secrets for redaction before any error paths.
   registerSecret(spec.githubToken);
   registerSecret(spec.llmAuth.token);
+  for (const server of spec.mcpServers) {
+    for (const value of Object.values(server.headers ?? {})) {
+      registerSecret(value);
+    }
+  }
 
   // Clear all credential env vars then set exactly one set based on provider.
   // Setting multiple credential env vars causes the SDK to reject the request.
@@ -83,8 +88,12 @@ async function main(): Promise<void> {
   }
 
   if (spec.mode === "code") {
+    const subject = spec.prompt.split("\n")[0]?.slice(0, 72) || spec.branch;
+    // Provenance trailers (who sponsored, where it was steered) travel on the
+    // commit itself, not just the PR description.
+    const trailers = spec.provenance?.trailers ?? [];
     const commitMessage =
-      spec.prompt.split("\n")[0]?.slice(0, 72) || spec.branch;
+      trailers.length > 0 ? `${subject}\n\n${trailers.join("\n")}` : subject;
     const pushed = await commitAndPush(gitCtx, spec.branch, commitMessage);
     if (pushed) {
       emit({ type: "pushed", branch: spec.branch });
