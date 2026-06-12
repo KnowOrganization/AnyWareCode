@@ -5,6 +5,7 @@ import {
 } from "discord.js";
 import { eq } from "drizzle-orm";
 import { schema } from "@anywherecode/db";
+import { listInstallations } from "../github/installations.js";
 import { ensureGuild } from "./gates.js";
 import type { BotContext } from "./interactions.js";
 
@@ -41,7 +42,8 @@ export async function handleOssCommand(
     });
     return;
   }
-  if (!guild.githubInstallationId) {
+  const installations = await listInstallations(ctx.db, guildId);
+  if (installations.length === 0) {
     await interaction.reply({
       content: "Connect GitHub first (`/connect github`) — the OSS tier is for public repos.",
       flags: MessageFlags.Ephemeral,
@@ -50,9 +52,15 @@ export async function handleOssCommand(
   }
 
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-  const repos = await ctx.github.listReposWithVisibility(
-    guild.githubInstallationId,
-  );
+  const repos = (
+    await Promise.all(
+      installations.map((i) =>
+        ctx.github
+          .listReposWithVisibility(i.installationId)
+          .catch(() => [] as Array<{ fullName: string; private: boolean }>),
+      ),
+    )
+  ).flat();
   if (repos.length === 0) {
     await interaction.editReply(
       "The GitHub installation has no repos. Grant access to your public repos, then retry.",

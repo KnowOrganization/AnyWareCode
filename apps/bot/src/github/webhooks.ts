@@ -1,10 +1,17 @@
-import { and, eq } from "drizzle-orm";
-import { schema, type Db, type Guild } from "@anywherecode/db";
+import { and, eq, inArray } from "drizzle-orm";
+import {
+  guildIdsForInstallation,
+  removeGuildInstallation,
+  schema,
+  type Db,
+  type Guild,
+} from "@anywherecode/db";
 import { handleIssueEvent } from "../discord/issue-feed.js";
 import type { BotContext } from "../discord/interactions.js";
 import { applyPreviewToCard } from "../discord/preview-card.js";
 import { handleAutoReview } from "../discord/review.js";
 import { postShipLog } from "../discord/shiplog.js";
+import { findAnnounceChannel } from "../discord/welcome.js";
 import { log } from "../observability.js";
 
 /**
@@ -17,13 +24,15 @@ import { log } from "../observability.js";
 
 export type WebhookDeps = BotContext;
 
-/** All guilds linked to an installation (uniqueness is not enforced). */
+/** All guilds linked to an installation (a guild may also link several). */
 export async function guildsForInstallation(
   db: Db,
   installationId: number,
 ): Promise<Guild[]> {
+  const guildIds = await guildIdsForInstallation(db, installationId);
+  if (guildIds.length === 0) return [];
   return db.query.guilds.findMany({
-    where: eq(schema.guilds.githubInstallationId, installationId),
+    where: inArray(schema.guilds.id, guildIds),
   });
 }
 
@@ -105,6 +114,29 @@ export function registerWebhookHandlers(deps: WebhookDeps): void {
       ).catch((err) => log.warn({ err }, "auto-review webhook failed"));
     },
   );
+
+  // GitHub-side uninstall: drop the link (and its channel bindings) in every
+  // guild that had it, and tell them.
+  webhooks.on("installation.deleted", ({ payload }) => {
+    const installationId = payload.installation.id;
+    void (async () => {
+      const guildIds = await guildIdsForInstallation(deps.db, installationId);
+      for (const guildId of guildIds) {
+        await removeGuildInstallation(deps.db, guildId, installationId);
+        const guild = await deps.client.guilds.fetch(guildId).catch(() => null);
+        const channel = guild ? findAnnounceChannel(guild) : null;
+        await channel
+          ?.send({
+            content: `🔌 The GitHub installation for **${
+              (payload.installation.account as { login?: string } | null)
+                ?.login ?? "an account"
+            }** was uninstalled on GitHub — its repos and channel bindings were unlinked here.`,
+            allowedMentions: { parse: [] },
+          })
+          .catch(() => {});
+      }
+    })().catch((err) => log.warn({ err }, "installation.deleted cleanup failed"));
+  });
 
   // Proactive previews: a deploy succeeded → find the PRs on that commit →
   // upgrade matching agent PR cards' Preview button to a live link.

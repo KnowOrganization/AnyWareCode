@@ -260,13 +260,6 @@ export async function handleSquadButton(
     });
     return;
   }
-  if (!guild.githubInstallationId) {
-    await interaction.reply({
-      content: "GitHub isn't connected anymore.",
-      flags: MessageFlags.Ephemeral,
-    });
-    return;
-  }
 
   if (sub === "scrap") {
     const claimed = await ctx.db
@@ -285,7 +278,7 @@ export async function handleSquadButton(
       content: `⚔️ ~~${truncate(squad.prompt, 100)}~~ — scrapped by ${interaction.user.username}; all branches deleted.`,
       components: [],
     });
-    await deleteSquadBranches(ctx, squad, guild.githubInstallationId, null);
+    await deleteSquadBranches(ctx, squad, null);
     return;
   }
 
@@ -314,8 +307,15 @@ export async function handleSquadButton(
   await interaction.deferUpdate();
 
   const votes = await readVoteCounts(interaction.message, attempts.length);
+  if (!winner.installationId) {
+    await interaction.followUp({
+      content: "The winning attempt's installation was unlinked — can't open the PR.",
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
   const pr = await ctx.github.createPullRequest({
-    installationId: guild.githubInstallationId,
+    installationId: winner.installationId,
     repoFullName: squad.repoFullName,
     branch: winner.branch,
     baseBranch: winner.baseBranch,
@@ -358,7 +358,7 @@ export async function handleSquadButton(
       components: [],
     })
     .catch(() => {});
-  await deleteSquadBranches(ctx, squad, guild.githubInstallationId, winner.id);
+  await deleteSquadBranches(ctx, squad, winner.id);
 }
 
 async function readVoteCounts(
@@ -384,14 +384,14 @@ async function readVoteCounts(
 async function deleteSquadBranches(
   ctx: BotContext,
   squad: Squad,
-  installationId: number,
   keepTaskId: string | null,
 ): Promise<void> {
   const attempts = await attemptRows(ctx, squad);
   for (const task of attempts) {
     if (!task || task.id === keepTaskId || task.status !== "done") continue;
+    if (!task.installationId) continue;
     await ctx.github
-      .deleteRef(installationId, squad.repoFullName, task.branch)
+      .deleteRef(task.installationId, squad.repoFullName, task.branch)
       .catch(() => {}); // best-effort: branch may be gone already
   }
 }
@@ -431,12 +431,7 @@ export async function sweepSquads(ctx: BotContext): Promise<void> {
       .where(and(eq(schema.squads.id, squad.id), eq(schema.squads.status, "voting")))
       .returning();
     if (claimed.length === 0) continue;
-    const guild = await ctx.db.query.guilds.findFirst({
-      where: eq(schema.guilds.id, squad.guildId),
-    });
-    if (guild?.githubInstallationId) {
-      await deleteSquadBranches(ctx, squad, guild.githubInstallationId, null);
-    }
+    await deleteSquadBranches(ctx, squad, null);
     if (squad.voteMessageId) {
       const channel = await ctx.client.channels
         .fetch(squad.channelId)

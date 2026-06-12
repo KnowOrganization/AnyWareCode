@@ -216,6 +216,9 @@ async function actOnDecision(
       );
       return;
     }
+    const binding = await ctx.db.query.channelRepos.findFirst({
+      where: eq(schema.channelRepos.channelId, env.repoChannelId),
+    });
     const { id } = await createProposal(ctx, {
       guildId: message.guildId,
       channelId: env.repoChannelId,
@@ -224,6 +227,9 @@ async function actOnDecision(
       prompt,
       summary,
       repoFullName: env.repoFullName,
+      ...(binding?.installationId
+        ? { installationId: binding.installationId }
+        : {}),
     });
     await message.reply({
       ...proposalMessage(summary, prompt, id),
@@ -247,7 +253,7 @@ async function actOnDecision(
   if (
     mode === "code" &&
     env.threadTask?.prNumber &&
-    env.guild.githubInstallationId &&
+    env.threadTask.installationId &&
     message.channel.isThread()
   ) {
     const task = env.threadTask;
@@ -260,14 +266,14 @@ async function actOnDecision(
       return;
     }
     const feedback = await ctx.github.pullRequestFeedback(
-      env.guild.githubInstallationId,
+      task.installationId!,
       task.repoFullName,
       task.prNumber!,
     );
     await reply(message, `🔁 Iterating on PR #${task.prNumber}…`);
     await launchTask(ctx, {
       guildId: message.guildId,
-      installationId: env.guild.githubInstallationId,
+      installationId: task.installationId!,
       repoFullName: task.repoFullName,
       channelId: task.channelId,
       mode: "code",
@@ -322,6 +328,7 @@ async function actOnDecision(
       guild: env.guild,
       authorId: message.author.id,
       repoFullName: pre.repoFullName,
+      installationId: pre.installationId,
       channelId: message.channelId,
       prompt,
       summary,

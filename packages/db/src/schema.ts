@@ -2,6 +2,7 @@ import {
   bigint,
   bigserial,
   boolean,
+  index,
   integer,
   jsonb,
   pgEnum,
@@ -41,10 +42,6 @@ export const ossStatus = pgEnum("oss_status", [
 
 export const guilds = pgTable("guilds", {
   id: text("id").primaryKey(), // Discord guild snowflake
-  githubInstallationId: bigint("github_installation_id", { mode: "number" }),
-  /** Installation owner login (org or user), set at /github/setup. Keyed for
-   * one-trial-per-org enforcement. */
-  githubAccountLogin: text("github_account_login"),
   /** Role allowed to invoke /code; null = server admins only. */
   allowedRoleId: text("allowed_role_id"),
   /** Effective monthly /code cap. Maintained by ensureGuild (trial/free) and
@@ -106,10 +103,34 @@ export const guilds = pgTable("guilds", {
   llmCredentialSetAt: timestamp("llm_credential_set_at", { withTimezone: true }),
 });
 
+/**
+ * GitHub App installations linked to a guild — one row per (guild, install).
+ * A guild may link its personal account AND any number of orgs; /github/setup
+ * appends rows, never overwrites. Indexed by installation for webhook fan-out.
+ */
+export const guildInstallations = pgTable(
+  "guild_installations",
+  {
+    guildId: text("guild_id").notNull(),
+    installationId: bigint("installation_id", { mode: "number" }).notNull(),
+    /** Installation owner login (org or user); one-trial-per-org enforcement. */
+    accountLogin: text("account_login").notNull(),
+    linkedAt: timestamp("linked_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.guildId, t.installationId] }),
+    index("guild_installations_installation_idx").on(t.installationId),
+  ],
+);
+
 export const channelRepos = pgTable("channel_repos", {
   channelId: text("channel_id").primaryKey(),
   guildId: text("guild_id").notNull(),
   repoFullName: text("repo_full_name").notNull(),
+  /** Which linked installation owns this repo (resolved at /repo set time). */
+  installationId: bigint("installation_id", { mode: "number" }),
 });
 
 /**
@@ -140,6 +161,9 @@ export const tasks = pgTable("tasks", {
   channelId: text("channel_id").notNull(),
   threadId: text("thread_id").notNull(),
   repoFullName: text("repo_full_name").notNull(),
+  /** Installation the task ran under — buttons (Merge/Iterate/Preview) read
+   * this stamp instead of re-resolving, so unlinking can't redirect them. */
+  installationId: bigint("installation_id", { mode: "number" }),
   branch: text("branch").notNull(),
   baseBranch: text("base_branch").notNull(),
   mode: text("mode", { enum: ["code", "ask"] }).notNull().default("code"),
@@ -182,6 +206,9 @@ export const proposals = pgTable("proposals", {
   /** Set when the proposal was made inside an existing thread. */
   threadId: text("thread_id"),
   repoFullName: text("repo_full_name").notNull(),
+  /** Installation owning the repo, stamped at creation (webhook payload or
+   * channel binding); Run resolves through this. */
+  installationId: bigint("installation_id", { mode: "number" }),
   prompt: text("prompt").notNull(),
   summary: text("summary").notNull(),
   /** Discord user whose mention produced the proposal. */
@@ -419,5 +446,6 @@ export type Schedule = typeof schedules.$inferSelect;
 export type ServerMemory = typeof serverMemories.$inferSelect;
 export type MemorySuggestion = typeof memorySuggestions.$inferSelect;
 export type UserLink = typeof userLinks.$inferSelect;
+export type GuildInstallation = typeof guildInstallations.$inferSelect;
 export type McpServerRow = typeof mcpServers.$inferSelect;
 export type Squad = typeof squads.$inferSelect;

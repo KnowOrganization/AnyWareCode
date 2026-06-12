@@ -192,6 +192,7 @@ export async function handleMemoryCommand(
       guild,
       authorId: interaction.user.id,
       repoFullName: pre.repoFullName,
+      installationId: pre.installationId,
       channelId: interaction.channelId,
       prompt,
       summary: "Commit Server Memory to AGENTS.md",

@@ -13,6 +13,7 @@ import type { Config } from "../config.js";
 import { schema, type Db } from "@anywherecode/db";
 import type { GitHubService } from "../github/app.js";
 import { createInstallState } from "../github/install-state.js";
+import { hasInstallation, listInstallations } from "../github/installations.js";
 import { findPreviewUrl, prHeadSha } from "../github/preview.js";
 import { applyPreviewToCard } from "./preview-card.js";
 import type { TaskOrchestrator } from "../orchestrator/taskRunner.js";
@@ -185,6 +186,7 @@ async function startAgentTask(
       guild,
       authorId: interaction.user.id,
       repoFullName: pre.repoFullName,
+      installationId: pre.installationId,
       channelId: interaction.channelId,
       prompt,
       // The squad marker survives into the proposal so approval re-launches
@@ -258,35 +260,49 @@ async function handleAutocomplete(
   ctx: BotContext,
   interaction: AutocompleteInteraction,
 ): Promise<void> {
-  // /repo set and /config issues both autocomplete the installation's repos.
+  // /repo set and /config issues both autocomplete repos, merged across
+  // every linked installation (personal account + orgs).
   if (!["repo", "config"].includes(interaction.commandName)) return;
-  const guild = interaction.guildId
-    ? await ctx.db.query.guilds.findFirst({
-        where: eq(schema.guilds.id, interaction.guildId),
-      })
-    : undefined;
-  if (!guild?.githubInstallationId) {
+  if (!interaction.guildId) {
     await interaction.respond([]);
     return;
   }
-  const cached = repoCache.get(guild.githubInstallationId);
-  let repos: string[];
-  if (cached && Date.now() - cached.fetchedAt < 60_000) {
-    repos = cached.repos;
-  } else {
-    repos = await ctx.github.listRepos(guild.githubInstallationId);
-    repoCache.set(guild.githubInstallationId, {
-      repos,
-      fetchedAt: Date.now(),
-    });
-  }
+  const repos = await reposAcrossInstallations(ctx, interaction.guildId);
   const query = interaction.options.getFocused().toLowerCase();
   await interaction.respond(
-    repos
+    [...repos.keys()]
       .filter((r) => r.toLowerCase().includes(query))
       .slice(0, 25)
       .map((r) => ({ name: r, value: r })),
   );
+}
+
+/** repoFullName → owning installationId, merged over all linked installs.
+ * First-linked installation wins a (rare) duplicate. Per-install 60s cache. */
+async function reposAcrossInstallations(
+  ctx: BotContext,
+  guildId: string,
+): Promise<Map<string, number>> {
+  const merged = new Map<string, number>();
+  for (const installation of await listInstallations(ctx.db, guildId)) {
+    const cached = repoCache.get(installation.installationId);
+    let repos: string[];
+    if (cached && Date.now() - cached.fetchedAt < 60_000) {
+      repos = cached.repos;
+    } else {
+      repos = await ctx.github
+        .listRepos(installation.installationId)
+        .catch(() => []);
+      repoCache.set(installation.installationId, {
+        repos,
+        fetchedAt: Date.now(),
+      });
+    }
+    for (const repo of repos) {
+      if (!merged.has(repo)) merged.set(repo, installation.installationId);
+    }
+  }
+  return merged;
 }
 
 async function handleRepo(
@@ -315,7 +331,7 @@ async function handleRepo(
     });
     return;
   }
-  if (!guild.githubInstallationId) {
+  if (!(await hasInstallation(ctx.db, guildId))) {
     const state = await createInstallState(
       ctx.db,
       ctx.config.STATE_SECRET,
@@ -329,20 +345,26 @@ async function handleRepo(
     return;
   }
   const name = interaction.options.getString("name", true);
-  const accessible = await ctx.github.listRepos(guild.githubInstallationId);
-  if (!accessible.includes(name)) {
+  const accessible = await reposAcrossInstallations(ctx, guildId);
+  const installationId = accessible.get(name);
+  if (!installationId) {
     await interaction.reply({
-      content: `I don't have access to \`${name}\`. Grant it in the GitHub App settings, then retry.`,
+      content: `I don't have access to \`${name}\` from any linked installation. Grant it in the GitHub App settings (or \`/connect github\` to add the org), then retry.`,
       flags: MessageFlags.Ephemeral,
     });
     return;
   }
   await ctx.db
     .insert(schema.channelRepos)
-    .values({ channelId: interaction.channelId, guildId, repoFullName: name })
+    .values({
+      channelId: interaction.channelId,
+      guildId,
+      repoFullName: name,
+      installationId,
+    })
     .onConflictDoUpdate({
       target: schema.channelRepos.channelId,
-      set: { repoFullName: name, guildId },
+      set: { repoFullName: name, guildId, installationId },
     });
   await interaction.reply(`📌 This channel now works on **${name}**.`);
 }
@@ -696,7 +718,7 @@ async function handleButton(
 
   // Preview is read-only — any member may resolve it; no canInvoke gate.
   if (action === "preview") {
-    if (!task.prNumber || !guild.githubInstallationId) {
+    if (!task.prNumber || !task.installationId) {
       await interaction.reply({
         content: "This task has no PR to preview.",
         flags: MessageFlags.Ephemeral,
@@ -706,14 +728,14 @@ async function handleButton(
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const sha = await prHeadSha(
       ctx.github,
-      guild.githubInstallationId,
+      task.installationId,
       task.repoFullName,
       task.prNumber,
     );
     const url = sha
       ? await findPreviewUrl(
           ctx.github,
-          guild.githubInstallationId,
+          task.installationId,
           task.repoFullName,
           sha,
         )
@@ -738,7 +760,7 @@ async function handleButton(
   }
 
   if (action === "merge") {
-    if (!task.prNumber || !guild.githubInstallationId) {
+    if (!task.prNumber || !task.installationId) {
       await interaction.reply({
         content: "This task has no PR to merge.",
         flags: MessageFlags.Ephemeral,
@@ -747,7 +769,7 @@ async function handleButton(
     }
     await interaction.deferReply();
     await ctx.github.mergePullRequest(
-      guild.githubInstallationId,
+      task.installationId,
       task.repoFullName,
       task.prNumber,
     );
@@ -763,7 +785,7 @@ async function handleButton(
   }
 
   if (action === "iterate") {
-    if (!task.prNumber || !guild.githubInstallationId) {
+    if (!task.prNumber || !task.installationId) {
       await interaction.reply({
         content: "This task has no PR to iterate on.",
         flags: MessageFlags.Ephemeral,
@@ -793,7 +815,7 @@ async function handleButton(
       return;
     }
     const feedback = await ctx.github.pullRequestFeedback(
-      guild.githubInstallationId,
+      task.installationId,
       task.repoFullName,
       task.prNumber,
     );
@@ -802,7 +824,7 @@ async function handleButton(
     );
     await launchTask(ctx, {
       guildId: interaction.guildId,
-      installationId: guild.githubInstallationId,
+      installationId: task.installationId,
       repoFullName: task.repoFullName,
       channelId: task.channelId,
       mode: "code",

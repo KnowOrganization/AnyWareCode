@@ -10,6 +10,7 @@ import {
 import { and, eq, lt } from "drizzle-orm";
 import { schema, type Db } from "@anywherecode/db";
 import type { Proposal } from "@anywherecode/db";
+import { resolveInstallationForRepo } from "../github/installations.js";
 import { canInvoke, ensureGuild } from "./gates.js";
 import type { BotContext } from "./interactions.js";
 import { checkTaskPreconditions, launchTask, truncate } from "./launch.js";
@@ -31,6 +32,8 @@ export async function createProposal(
     prompt: string;
     summary: string;
     repoFullName: string;
+    /** Installation owning the repo (webhook payload or channel binding). */
+    installationId?: number;
     source?: Proposal["source"];
     issueNumber?: number;
     scheduleId?: string;
@@ -48,6 +51,7 @@ export async function createProposal(
     channelId: args.channelId,
     threadId: args.threadId,
     repoFullName: args.repoFullName,
+    installationId: args.installationId ?? null,
     prompt: args.prompt,
     summary: args.summary,
     authorId: args.authorId,
@@ -167,6 +171,21 @@ export async function handleProposalButton(
     });
     return;
   }
+  const proposalInstallation =
+    proposal.installationId ??
+    (await resolveInstallationForRepo(
+      ctx.db,
+      ctx.github,
+      proposal.guildId,
+      proposal.repoFullName,
+    ));
+  if (!proposalInstallation) {
+    await interaction.reply({
+      content: "No linked GitHub installation has access to this proposal's repo anymore.",
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
   const pre = await checkTaskPreconditions(
     ctx,
     guild,
@@ -174,7 +193,7 @@ export async function handleProposalButton(
     "code",
     // Proposals carry their repo — webhook-fed ones may live in a channel
     // without a binding (e.g. a #triage feed serving many repos).
-    { repoFullName: proposal.repoFullName },
+    { repoFullName: proposal.repoFullName, installationId: proposalInstallation },
     proposal.prompt,
   );
   if (!pre.ok) {

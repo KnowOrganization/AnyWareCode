@@ -1,11 +1,11 @@
 {
   "version": 1,
   "functions": {
-    "/api/admin/oss": {},
-    "/api/checkout/pack": {},
-    "/api/portal": {},
+    "/api/admin/flags": {},
     "/api/checkout": {},
+    "/api/portal": {},
+    "/api/checkout/pack": {},
     "/api/stripe/webhook": {},
-    "/api/admin/flags": {}
+    "/api/admin/oss": {}
   }
 }

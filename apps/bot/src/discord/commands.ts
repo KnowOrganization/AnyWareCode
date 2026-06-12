@@ -38,7 +38,15 @@ export const commands = [
         ),
     )
     .addSubcommand((sub) =>
-      sub.setName("github").setDescription("Connect GitHub repositories"),
+      sub
+        .setName("github")
+        .setDescription("Connect GitHub repositories (personal account and orgs)")
+        .addStringOption((opt) =>
+          opt
+            .setName("remove")
+            .setDescription("Unlink an installation by its account/org login")
+            .setRequired(false),
+        ),
     )
     .addSubcommand((sub) =>
       sub

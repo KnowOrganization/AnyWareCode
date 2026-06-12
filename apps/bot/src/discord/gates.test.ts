@@ -13,8 +13,6 @@ import {
 function guildRow(overrides: Partial<Guild> = {}): Guild {
   return {
     id: "g1",
-    githubInstallationId: 1,
-    githubAccountLogin: null,
     allowedRoleId: null,
     taskCap: 10,
     concurrency: 1,

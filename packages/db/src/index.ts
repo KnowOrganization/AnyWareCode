@@ -1,6 +1,6 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
 import * as schema from "./schema.js";
@@ -51,6 +51,9 @@ export async function deleteGuildData(db: Db, guildId: string): Promise<void> {
     .delete(schema.mcpServers)
     .where(eq(schema.mcpServers.guildId, guildId));
   await db.delete(schema.squads).where(eq(schema.squads.guildId, guildId));
+  await db
+    .delete(schema.guildInstallations)
+    .where(eq(schema.guildInstallations.guildId, guildId));
   // github_org_trials intentionally survives guild deletion: the org's trial
   // is consumed forever (re-adding the bot must not grant a fresh trial).
   // user_links is user-keyed, not guild-keyed — it survives too.
@@ -87,6 +90,63 @@ export async function applyGuildSubscription(
     .update(schema.guilds)
     .set(patch)
     .where(eq(schema.guilds.id, guildId));
+}
+
+// --- GitHub installations (multi-org connect) ---
+
+export async function listGuildInstallations(db: Db, guildId: string) {
+  return db.query.guildInstallations.findMany({
+    where: eq(schema.guildInstallations.guildId, guildId),
+    orderBy: schema.guildInstallations.linkedAt,
+  });
+}
+
+/** Append a linked installation; re-linking the same one is a no-op. */
+export async function addGuildInstallation(
+  db: Db,
+  row: { guildId: string; installationId: number; accountLogin: string },
+): Promise<void> {
+  await db
+    .insert(schema.guildInstallations)
+    .values(row)
+    .onConflictDoNothing();
+}
+
+export async function removeGuildInstallation(
+  db: Db,
+  guildId: string,
+  installationId: number,
+): Promise<boolean> {
+  const deleted = await db
+    .delete(schema.guildInstallations)
+    .where(
+      and(
+        eq(schema.guildInstallations.guildId, guildId),
+        eq(schema.guildInstallations.installationId, installationId),
+      ),
+    )
+    .returning();
+  // Bindings to that installation's repos are dead — drop them with it.
+  await db
+    .delete(schema.channelRepos)
+    .where(
+      and(
+        eq(schema.channelRepos.guildId, guildId),
+        eq(schema.channelRepos.installationId, installationId),
+      ),
+    );
+  return deleted.length > 0;
+}
+
+/** All guilds linked to an installation (webhook fan-out). */
+export async function guildIdsForInstallation(
+  db: Db,
+  installationId: number,
+): Promise<string[]> {
+  const rows = await db.query.guildInstallations.findMany({
+    where: eq(schema.guildInstallations.installationId, installationId),
+  });
+  return rows.map((r) => r.guildId);
 }
 
 // --- Task packs ---
@@ -300,6 +360,7 @@ export type {
   ServerMemory,
   MemorySuggestion,
   UserLink,
+  GuildInstallation,
   McpServerRow,
   Squad,
 } from "./schema.js";

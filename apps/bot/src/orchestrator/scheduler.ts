@@ -53,6 +53,9 @@ export async function sweepDueSchedules(ctx: BotContext): Promise<void> {
     if (claimed.length === 0) continue; // another instance fired it
 
     try {
+      const binding = await ctx.db.query.channelRepos.findFirst({
+        where: eq(schema.channelRepos.channelId, s.channelId),
+      });
       const { id } = await createProposal(ctx, {
         guildId: s.guildId,
         channelId: s.channelId,
@@ -61,6 +64,9 @@ export async function sweepDueSchedules(ctx: BotContext): Promise<void> {
         prompt: s.prompt,
         summary: truncate(s.prompt.split("\n")[0] ?? "scheduled task", 80),
         repoFullName: s.repoFullName,
+        ...(binding?.installationId
+          ? { installationId: binding.installationId }
+          : {}),
         source: "schedule",
         scheduleId: s.id,
         ttlMs: ctx.config.SCHEDULE_PROPOSAL_TTL_HOURS * 3_600_000,

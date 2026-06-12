@@ -143,6 +143,7 @@ export class TaskOrchestrator {
       channelId: params.channelId,
       threadId: params.thread.id,
       repoFullName: params.repoFullName,
+      installationId: params.installationId,
       branch,
       baseBranch,
       mode: params.mode,

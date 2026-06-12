@@ -13,6 +13,7 @@ import {
   launchTask,
   truncate,
 } from "./launch.js";
+import { guildsForInstallation } from "../github/webhooks.js";
 import { ensureGuild } from "./gates.js";
 import type { BotContext } from "./interactions.js";
 
@@ -182,9 +183,7 @@ export async function handleAutoReview(
   if (pr.isDraft) return;
   // Never review our own PRs — that's what humans are for.
   if (pr.headRef.startsWith("anywherecode/")) return;
-  const guilds = await ctx.db.query.guilds.findMany({
-    where: eq(schema.guilds.githubInstallationId, installationId),
-  });
+  const guilds = await guildsForInstallation(ctx.db, installationId);
   for (const guild of guilds) {
     try {
       const settings = await ctx.db.query.repoSettings.findFirst({
@@ -199,7 +198,7 @@ export async function handleAutoReview(
         ctx,
         fresh,
         "ask",
-        { repoFullName },
+        { repoFullName, installationId },
         `review PR #${pr.number}`,
       );
       if (!pre.ok) continue;

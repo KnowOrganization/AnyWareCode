@@ -49,12 +49,13 @@ export async function launchRepro(
   ctx: BotContext,
   args: {
     guild: Guild;
+    installationId: number;
     repoFullName: string;
     issue: IssueInfo;
     card: Message;
   },
 ): Promise<void> {
-  const { guild, repoFullName, issue, card } = args;
+  const { guild, installationId, repoFullName, issue, card } = args;
   if (ctx.orchestrator.runningCount(guild.id) >= guild.concurrency) {
     await card
       .reply({
@@ -68,7 +69,7 @@ export async function launchRepro(
     ctx,
     guild,
     "ask",
-    { repoFullName },
+    { repoFullName, installationId },
     `repro issue #${issue.number}`,
   );
   if (!pre.ok) return;

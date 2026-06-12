@@ -6,7 +6,7 @@ import {
 import { and, eq } from "drizzle-orm";
 import { getPlan, schema, type RepoSettings } from "@anywherecode/db";
 import { captureError, log } from "../observability.js";
-import type { WebhookDeps } from "../github/webhooks.js";
+import { guildsForInstallation, type WebhookDeps } from "../github/webhooks.js";
 import { quarantine } from "../security/quarantine.js";
 import { resolveTier } from "./gates.js";
 import { createProposal, setProposalMessageId } from "./proposals.js";
@@ -95,9 +95,7 @@ export async function handleIssueEvent(
   const issue: IssueInfo = { ...rawIssue, title: title.text, body: body.text };
   const flags = [...new Set([...title.flags, ...body.flags])];
 
-  const guilds = await deps.db.query.guilds.findMany({
-    where: eq(schema.guilds.githubInstallationId, installationId),
-  });
+  const guilds = await guildsForInstallation(deps.db, installationId);
   for (const guild of guilds) {
     try {
       const settings = await deps.db.query.repoSettings.findFirst({
@@ -147,6 +145,7 @@ export async function handleIssueEvent(
         prompt: issuePrompt(repoFullName, issue),
         summary: `Issue #${issue.number}: ${truncate(issue.title, 70)}`,
         repoFullName,
+        installationId,
         source: "issue",
         issueNumber: issue.number,
         flags,
@@ -199,6 +198,7 @@ export async function handleIssueEvent(
           if (plan?.features.includes("repro_gate")) {
             void launchRepro(deps, {
               guild,
+              installationId,
               repoFullName,
               issue,
               card: message,

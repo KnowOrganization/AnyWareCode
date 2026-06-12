@@ -20,6 +20,8 @@ import {
   validateLlmAuth,
   type LlmAuth,
 } from "../llm/credentials.js";
+import { removeGuildInstallation } from "@anywherecode/db";
+import { listInstallations } from "../github/installations.js";
 import { capState, ensureGuild, planSummary } from "./gates.js";
 import type { BotContext } from "./interactions.js";
 import { handleConnectMcp } from "./mcp.js";
@@ -67,6 +69,27 @@ async function handleConnectGithub(
     return;
   }
   const guildId = interaction.guildId!;
+  const linked = await listInstallations(ctx.db, guildId);
+
+  const removeLogin = interaction.options.getString("remove")?.toLowerCase();
+  if (removeLogin) {
+    const target = linked.find(
+      (i) => i.accountLogin.toLowerCase() === removeLogin,
+    );
+    if (!target) {
+      await interaction.reply({
+        content: `No linked installation for \`${removeLogin}\`. Linked: ${linked.map((i) => i.accountLogin).join(", ") || "none"}.`,
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+    await removeGuildInstallation(ctx.db, guildId, target.installationId);
+    await interaction.reply(
+      `🔌 Unlinked **${target.accountLogin}** — its channel bindings were removed. (Uninstalling the app on GitHub's side is separate.)`,
+    );
+    return;
+  }
+
   const state = await createInstallState(
     ctx.db,
     ctx.config.STATE_SECRET,
@@ -74,7 +97,12 @@ async function handleConnectGithub(
     ctx.config.INSTALL_STATE_TTL_MINUTES,
   );
   await interaction.reply({
-    content: `Connect GitHub by [installing the app](${ctx.github.installUrl(state)}). Pick which repos I may access.`,
+    content: [
+      linked.length > 0
+        ? `Linked installations: ${linked.map((i) => `**${i.accountLogin || `#${i.installationId}`}**`).join(", ")}.`
+        : "No GitHub installations linked yet.",
+      `[Install on another account or org](${ctx.github.installUrl(state)}) — GitHub's picker offers your orgs. Unlink with \`/connect github remove:<login>\`.`,
+    ].join("\n"),
     flags: MessageFlags.Ephemeral,
   });
 }
@@ -232,9 +260,11 @@ export async function handleSetupCommand(
   const guildId = interaction.guildId!;
   const guild = await ensureGuild(ctx.db, guildId, ctx.config);
 
-  const githubStatus = guild.githubInstallationId
-    ? `✅ GitHub connected (install #${guild.githubInstallationId})`
-    : `❌ GitHub not connected — run \`/connect github\``;
+  const installations = await listInstallations(ctx.db, guildId);
+  const githubStatus =
+    installations.length > 0
+      ? `✅ GitHub connected: ${installations.map((i) => `**${i.accountLogin || `#${i.installationId}`}**`).join(", ")} (${installations.length} installation${installations.length > 1 ? "s" : ""})`
+      : `❌ GitHub not connected — run \`/connect github\``;
 
   let llmStatus: string;
   if (guild.llmProviderType && guild.llmCredentialSetAt) {

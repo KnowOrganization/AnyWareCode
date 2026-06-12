@@ -124,8 +124,14 @@ Copy the `https://something.trycloudflare.com` URL — this is your `PUBLIC_URL`
    - Checks: **Read-only**
    - Metadata: **Read-only** (required automatically)
    Then under **Subscribe to events**: check **Issues**, **Pull request**,
-   **Deployment status**. (Existing installations must approve any permission
-   change from their installation settings page.)
+   **Deployment status**, **Installation** (so GitHub-side uninstalls clean up
+   the Discord-side links). (Existing installations must approve any
+   permission change from their installation settings page.)
+
+   > A server can link **multiple installations** — its members' personal
+   > accounts and any orgs. `/connect github` always offers an "install on
+   > another account or org" link; GitHub's own picker lists the orgs you
+   > admin. Unlink with `/connect github remove:<login>`.
 4. **Where can this GitHub App be installed?**: Any account
 5. Click **Create GitHub App**.
 6. On the app page:

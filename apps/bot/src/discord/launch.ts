@@ -12,6 +12,11 @@ import type { Guild } from "@anywherecode/db";
 import { getOrgTrial } from "@anywherecode/db";
 import { isClaudeOauthEnabled } from "../flags.js";
 import { createInstallState } from "../github/install-state.js";
+import {
+  hasInstallation,
+  listInstallations,
+  resolveInstallationForRepo,
+} from "../github/installations.js";
 import { getUserLink, userLinkingEnabled } from "../github/user-link.js";
 import { resolveLlmAuth, type ResolvedLlmAuth } from "../llm/credentials.js";
 import { captureError } from "../observability.js";
@@ -31,9 +36,12 @@ export type PreconditionResult =
   | { ok: true; repoFullName: string; installationId: number }
   | { ok: false; reason: string };
 
-/** Where the task's repo comes from: a bound channel, or directly (webhook
- * features like the issue feed name the repo without a channel binding). */
-export type RepoRef = { channelId: string } | { repoFullName: string };
+/** Where the task's repo comes from: a bound channel (binding carries the
+ * owning installation), or directly with the installation the caller already
+ * knows (webhook features hold payload.installation.id). */
+export type RepoRef =
+  | { channelId: string }
+  | { repoFullName: string; installationId: number };
 
 export async function checkTaskPreconditions(
   ctx: BotContext,
@@ -99,7 +107,7 @@ export async function checkSystemTaskPreconditions(
       reason: `That's too long (${prompt.length} chars; max ${ctx.config.MAX_PROMPT_CHARS}). Trim it and try again.`,
     };
   }
-  if (!guild.githubInstallationId) {
+  if (!(await hasInstallation(ctx.db, guild.id))) {
     const state = await createInstallState(
       ctx.db,
       ctx.config.STATE_SECRET,
@@ -119,8 +127,10 @@ export async function checkSystemTaskPreconditions(
   if (!usable.ok) return usable;
 
   let repoFullName: string;
+  let installationId: number | null;
   if ("repoFullName" in repoRef) {
     repoFullName = repoRef.repoFullName;
+    installationId = repoRef.installationId;
   } else {
     const channelRepo = await ctx.db.query.channelRepos.findFirst({
       where: eq(schema.channelRepos.channelId, repoRef.channelId),
@@ -132,11 +142,20 @@ export async function checkSystemTaskPreconditions(
       };
     }
     repoFullName = channelRepo.repoFullName;
+    installationId =
+      channelRepo.installationId ??
+      (await resolveInstallationForRepo(ctx.db, ctx.github, guild.id, repoFullName));
+  }
+  if (!installationId) {
+    return {
+      ok: false,
+      reason: `No linked GitHub installation has access to \`${repoFullName}\` — re-run \`/repo set\` or \`/connect github\`.`,
+    };
   }
   // OSS tier is for public repos only; recheck lazily in case one went private.
   if (
     resolveTier(guild).kind === "oss" &&
-    (await ctx.github.repoIsPrivate(guild.githubInstallationId, repoFullName))
+    (await ctx.github.repoIsPrivate(installationId, repoFullName))
   ) {
     return {
       ok: false,
@@ -150,7 +169,7 @@ export async function checkSystemTaskPreconditions(
   return {
     ok: true,
     repoFullName,
-    installationId: guild.githubInstallationId,
+    installationId,
   };
 }
 
@@ -184,13 +203,15 @@ export async function assertLlmUsable(
   }
   const gates = await checkTrialGates(ctx.client, ctx.db, ctx.config, guild);
   if (!gates.ok) return gates;
-  if (guild.githubAccountLogin) {
-    const orgTrial = await getOrgTrial(ctx.db, guild.githubAccountLogin);
+  // One trial per GitHub org, across EVERY linked installation: any linked
+  // org whose trial belongs to a different guild blocks the platform key.
+  for (const installation of await listInstallations(ctx.db, guild.id)) {
+    if (!installation.accountLogin) continue;
+    const orgTrial = await getOrgTrial(ctx.db, installation.accountLogin);
     if (orgTrial && orgTrial.guildId !== guild.id) {
       return {
         ok: false,
-        reason:
-          "This GitHub org already used its free trial in another server. Connect your own LLM key with `/connect llm` or pick a plan.",
+        reason: `The GitHub org \`${installation.accountLogin}\` already used its free trial in another server. Connect your own LLM key with \`/connect llm\` or pick a plan.`,
       };
     }
   }

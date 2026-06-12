@@ -1,7 +1,12 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import { eq, lt, sql } from "drizzle-orm";
 import type { Config } from "../config.js";
-import { claimOrgTrial, schema, type Db } from "@anywherecode/db";
+import {
+  addGuildInstallation,
+  claimOrgTrial,
+  schema,
+  type Db,
+} from "@anywherecode/db";
 import type { GitHubService } from "../github/app.js";
 import { consumeInstallState } from "../github/install-state.js";
 import {
@@ -75,13 +80,13 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
         .send("Could not verify that installation. Start over from Discord.");
     }
 
-    await deps.db
-      .update(schema.guilds)
-      .set({
-        githubInstallationId: installationId,
-        githubAccountLogin: installation.accountLogin,
-      })
-      .where(eq(schema.guilds.id, guildId));
+    // Append — a guild links its personal account AND any number of orgs;
+    // re-running setup never overwrites earlier links.
+    await addGuildInstallation(deps.db, {
+      guildId,
+      installationId,
+      accountLogin: installation.accountLogin ?? "",
+    });
     // Claim the org's one platform-key trial; first guild to link wins. The
     // claim is permanent — re-linking elsewhere can't mint a fresh trial.
     if (installation.accountLogin) {
@@ -96,7 +101,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     return reply
       .type("text/html")
       .send(
-        "<h1>✅ AnywhereCode is connected</h1><p>Head back to Discord and type <code>/repo set</code>, then <code>/code</code> in any channel.</p>",
+        "<h1>✅ AnywhereCode is connected</h1><p>Head back to Discord and type <code>/repo set</code>, then <code>/code</code> in any channel. Connect more orgs anytime with <code>/connect github</code>.</p>",
       );
   });
 

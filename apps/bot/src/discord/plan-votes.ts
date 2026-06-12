@@ -14,6 +14,7 @@ import { and, eq } from "drizzle-orm";
 import { schema, type Guild, type Proposal } from "@anywherecode/db";
 import { resolveLlmAuth } from "../llm/credentials.js";
 import { generatePlan } from "../llm/plan.js";
+import { resolveInstallationForRepo } from "../github/installations.js";
 import { canInvoke, ensureGuild } from "./gates.js";
 import type { BotContext } from "./interactions.js";
 import { launchTask, truncate } from "./launch.js";
@@ -38,6 +39,7 @@ export async function maybeRequirePlanVote(
     guild: Guild;
     authorId: string;
     repoFullName: string;
+    installationId?: number;
     channelId: string;
     prompt: string;
     summary: string;
@@ -63,6 +65,7 @@ export async function maybeRequirePlanVote(
     prompt: args.prompt,
     summary: args.summary,
     repoFullName: args.repoFullName,
+    ...(args.installationId ? { installationId: args.installationId } : {}),
     source: "plan",
     planText,
     ttlMs: ctx.config.PLAN_VOTE_TTL_MINUTES * 60_000,
@@ -148,8 +151,16 @@ export async function approvePlanProposal(
   if (claimed.length === 0) {
     return { ok: false, reason: "Someone already acted on this plan." };
   }
-  const guild = await ensureGuild(ctx.db, proposal.guildId, ctx.config);
-  if (!guild.githubInstallationId || !proposal.messageId) {
+  await ensureGuild(ctx.db, proposal.guildId, ctx.config);
+  const installationId =
+    proposal.installationId ??
+    (await resolveInstallationForRepo(
+      ctx.db,
+      ctx.github,
+      proposal.guildId,
+      proposal.repoFullName,
+    ));
+  if (!installationId || !proposal.messageId) {
     return { ok: false, reason: "This plan can't launch anymore (setup changed)." };
   }
   // A squad-flagged plan re-launches the full squad, not a single task.
@@ -157,7 +168,7 @@ export async function approvePlanProposal(
   if (squadMatch) {
     const result = await launchSquad(ctx, {
       guildId: proposal.guildId,
-      installationId: guild.githubInstallationId,
+      installationId,
       repoFullName: proposal.repoFullName,
       channelId: proposal.channelId,
       prompt: proposal.prompt,
@@ -170,7 +181,7 @@ export async function approvePlanProposal(
   }
   await launchTask(ctx, {
     guildId: proposal.guildId,
-    installationId: guild.githubInstallationId,
+    installationId,
     repoFullName: proposal.repoFullName,
     channelId: proposal.channelId,
     mode: "code",

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import {
   applyOssDecision,
   getPlan,
+  listGuildInstallations,
   listPendingOssApplications,
 } from "@anywherecode/db";
 import { isAdminRequest } from "@/lib/admin";
@@ -16,11 +17,15 @@ export async function GET(req: Request) {
   }
   const pending = await listPendingOssApplications(db);
   return NextResponse.json({
-    pending: pending.map((g) => ({
-      guildId: g.id,
-      githubAccountLogin: g.githubAccountLogin,
-      appliedAt: g.ossAppliedAt,
-    })),
+    pending: await Promise.all(
+      pending.map(async (g) => ({
+        guildId: g.id,
+        githubAccounts: (await listGuildInstallations(db, g.id)).map(
+          (i) => i.accountLogin,
+        ),
+        appliedAt: g.ossAppliedAt,
+      })),
+    ),
   });
 }
 
