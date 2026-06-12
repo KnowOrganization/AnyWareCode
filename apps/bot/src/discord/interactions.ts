@@ -494,6 +494,7 @@ async function handleConfigIssues(
     | "member"
     | "owner";
   const dailyCap = interaction.options.getInteger("daily_cap") ?? 10;
+  const repro = interaction.options.getBoolean("repro") ?? false;
 
   if (!channel) {
     await ctx.db
@@ -530,6 +531,7 @@ async function handleConfigIssues(
       issueLabels: labels,
       issueMinAssoc: trust,
       issueDailyCap: dailyCap,
+      reproGate: repro,
       failCount: 0,
     })
     .onConflictDoUpdate({
@@ -539,11 +541,16 @@ async function handleConfigIssues(
         issueLabels: labels,
         issueMinAssoc: trust,
         issueDailyCap: dailyCap,
+        reproGate: repro,
         failCount: 0,
       },
     });
   await interaction.reply(
-    `🐛 New issues in \`${repoFullName}\`${labels.length ? ` labeled ${labels.map((l) => `\`${l}\``).join("/")}` : ""} will appear in <#${channel.id}> as Run/Dismiss cards (max ${dailyCap}/day, author trust: ${trust}).`,
+    `🐛 New issues in \`${repoFullName}\`${labels.length ? ` labeled ${labels.map((l) => `\`${l}\``).join("/")}` : ""} will appear in <#${channel.id}> as Run/Dismiss cards (max ${dailyCap}/day, author trust: ${trust}).${
+      repro
+        ? " 🔬 Repro Gate on — each report gets verified in the sandbox first (uses /ask quota; unlimited on the OSS tier)."
+        : ""
+    }`,
   );
 }
 

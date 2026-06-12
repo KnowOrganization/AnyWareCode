@@ -310,6 +310,12 @@ export const commands = [
             .setMinValue(1)
             .setMaxValue(50)
             .setRequired(false),
+        )
+        .addBooleanOption((opt) =>
+          opt
+            .setName("repro")
+            .setDescription("Repro Gate: verify each report in the sandbox first (uses /ask quota)")
+            .setRequired(false),
         ),
     ),
 ].map((builder) => builder.toJSON());

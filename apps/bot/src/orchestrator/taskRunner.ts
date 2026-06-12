@@ -491,6 +491,11 @@ export class TaskOrchestrator {
     return out("done", { pushed: true, prNumber, summary, diffFiles });
   }
 
+  /** Live task count for a guild (saturation checks — e.g. Repro Gate skips). */
+  runningCount(guildId: string): number {
+    return this.limiter.runningCount(guildId);
+  }
+
   /** Spectate: verbose progress for everyone watching the thread. One-way. */
   enableSpectate(taskId: string): boolean {
     const task = [...this.active.values()].find((t) => t.taskId === taskId);

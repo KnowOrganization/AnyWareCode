@@ -4,11 +4,13 @@ import {
   ButtonStyle,
 } from "discord.js";
 import { and, eq } from "drizzle-orm";
-import { schema, type RepoSettings } from "@anywherecode/db";
+import { getPlan, schema, type RepoSettings } from "@anywherecode/db";
 import { captureError, log } from "../observability.js";
 import type { WebhookDeps } from "../github/webhooks.js";
 import { quarantine } from "../security/quarantine.js";
+import { resolveTier } from "./gates.js";
 import { createProposal, setProposalMessageId } from "./proposals.js";
+import { launchRepro } from "./repro.js";
 import { truncate } from "./launch.js";
 
 /**
@@ -185,6 +187,26 @@ export async function handleIssueEvent(
           allowedMentions: { parse: [] },
         });
         await setProposalMessageId(deps.db, id, message.id);
+        // Repro Gate: verify the claim in a read-only sandbox; verdict replies
+        // to this card. Launched only after the card exists (it anchors the
+        // repro thread) and only inside the dedup guard (a `labeled` refire
+        // never spawns a second container).
+        if (settings.reproGate) {
+          const tier = resolveTier(guild);
+          const planId =
+            tier.kind === "oss" ? "oss" : tier.kind === "paid" ? tier.planId : null;
+          const plan = planId ? await getPlan(deps.db, planId) : null;
+          if (plan?.features.includes("repro_gate")) {
+            void launchRepro(deps, {
+              guild,
+              repoFullName,
+              issue,
+              card: message,
+            }).catch((err) =>
+              captureError(err, { msg: "repro gate failed", guildId: guild.id }),
+            );
+          }
+        }
         if (settings.failCount > 0) {
           await deps.db
             .update(schema.repoSettings)
