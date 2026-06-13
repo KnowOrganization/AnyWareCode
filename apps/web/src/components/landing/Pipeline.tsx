@@ -39,6 +39,7 @@ export function Pipeline() {
   const barRef = useRef<HTMLDivElement>(null);
   const pctRef = useRef<HTMLSpanElement>(null);
   const hintRef = useRef<HTMLParagraphElement>(null);
+  const chip0Ref = useRef<HTMLSpanElement>(null);
 
   useLayoutEffect(() => {
     const wide = window.matchMedia("(min-width: 1024px)");
@@ -88,7 +89,14 @@ export function Pipeline() {
           if (pctRef.current)
             pctRef.current.textContent = `T+${p.toFixed(2)}`;
           if (hintRef.current)
-            hintRef.current.style.opacity = p < 0.03 ? "1" : "0";
+            hintRef.current.style.opacity = p < 0.08 ? "1" : "0";
+          // stage 1: the command types itself as the user scrolls
+          if (chip0Ref.current) {
+            const full = site.pipeline[0]!.chip;
+            const local = Math.min(1, p / STAGE_AT[1]!);
+            const n = Math.min(full.length, Math.round(local * 1.6 * full.length));
+            chip0Ref.current.textContent = full.slice(0, n);
+          }
         },
       });
     },
@@ -99,12 +107,19 @@ export function Pipeline() {
 
   return (
     <section ref={outer} id="how" className="relative h-[420vh]">
-      <div className="sticky top-0 h-screen overflow-hidden">
+      <div data-cursor className="sticky top-0 h-screen overflow-hidden">
         {/* scene */}
         <div className="absolute inset-0">
           <PipelineScene progress={progress} active={active} />
         </div>
-        <div aria-hidden className="bg-grid absolute inset-0 -z-10 opacity-60" />
+        <div
+          aria-hidden
+          className="absolute inset-0 -z-10"
+          style={{
+            background:
+              "radial-gradient(58% 48% at 50% 44%, rgba(0,245,212,0.06), transparent 72%)",
+          }}
+        />
 
         {/* HUD */}
         <Container className="pointer-events-none relative z-10 flex h-full flex-col justify-between py-10">
@@ -148,7 +163,19 @@ export function Pipeline() {
                     {s.body}
                   </p>
                   <p className="mt-3 inline-block rounded-[0.3rem] border border-line bg-bg-soft/80 px-3 py-1.5 font-mono text-[0.72rem] text-primary/90">
-                    {s.chip}
+                    {i === 0 ? (
+                      <>
+                        <span ref={chip0Ref}>{s.chip}</span>
+                        <span
+                          aria-hidden
+                          className="animate-[caretBlink_1.1s_steps(2)_infinite]"
+                        >
+                          ▍
+                        </span>
+                      </>
+                    ) : (
+                      s.chip
+                    )}
                   </p>
                 </div>
               ))}
@@ -161,6 +188,8 @@ export function Pipeline() {
                 className="label-mono mb-4 text-faint transition-opacity duration-500"
               >
                 Scroll to advance ↓
+                <br />
+                <span className="text-primary/70">Click — the field answers</span>
               </p>
               <div className="label-mono flex items-center justify-between text-faint">
                 <span ref={pctRef} className="text-primary tabular-nums">

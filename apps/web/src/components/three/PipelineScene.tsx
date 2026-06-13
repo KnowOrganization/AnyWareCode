@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
-import { Canvas, useFrame } from "@react-three/fiber";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
 
 /* The custody scene — one continuous shot driven by scroll progress (0..1):
  *
@@ -35,7 +35,7 @@ const CAM: ReadonlyArray<{
   pos: readonly [number, number, number];
   look: readonly [number, number, number];
 }> = [
-  { t: 0.0, pos: [-7.0, 0.5, 6.6], look: [-6.4, 0.1, 0] },
+  { t: 0.0, pos: [-7.0, 0.5, 7.6], look: [-6.4, 0.1, 0] },
   { t: 0.3, pos: [-1.4, 1.5, 7.6], look: [0, 0, 0] },
   { t: 0.62, pos: [2.4, 1.8, 6.2], look: [0.5, 0.1, 0] },
   { t: 1.0, pos: [4.9, 1.5, 7.5], look: [5.9, 0.8, -0.4] },
@@ -77,14 +77,69 @@ function makeRing(rgb: string): THREE.Texture {
   return new THREE.CanvasTexture(c);
 }
 
+const PING_LIFE = 2.4;
+const PING_SPEED = 2.4;
+
+interface Ping {
+  x: number;
+  y: number;
+  z: number;
+  t0: number;
+}
+
 function Story({ p }: { p: { current: number } }) {
   const time = useRef(0);
-  const camPos = useRef(new THREE.Vector3(-7, 0.5, 6.6));
+  const camPos = useRef(new THREE.Vector3(-7, 0.5, 7.6));
   const camLook = useRef(new THREE.Vector3(-6.4, 0.1, 0));
+  const { camera, gl } = useThree();
+
+  /* pointer stir + click sonar — the scene answers the hand */
+  const pointerWorld = useRef(new THREE.Vector3(0, 99, 0)); // parked off-field
+  const pointerEase = useRef(new THREE.Vector3(0, 99, 0));
+  const pings = useRef<Ping[]>([]);
+  const ringPool = useRef<(THREE.Sprite | null)[]>([null, null, null, null]);
+  const ringMats = useRef<(THREE.SpriteMaterial | null)[]>([
+    null,
+    null,
+    null,
+    null,
+  ]);
 
   const glowTeal = useMemo(() => makeGlow("0,245,212"), []);
   const glowAmber = useMemo(() => makeGlow("243,178,76"), []);
   const ringAmber = useMemo(() => makeRing("243,178,76"), []);
+  const ringTeal = useMemo(() => makeRing("0,245,212"), []);
+
+  useEffect(() => {
+    const ray = new THREE.Raycaster();
+    const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+    const el = gl.domElement;
+    const toPlane = (e: PointerEvent, out: THREE.Vector3) => {
+      const r = el.getBoundingClientRect();
+      const ndc = new THREE.Vector2(
+        ((e.clientX - r.left) / r.width) * 2 - 1,
+        -((e.clientY - r.top) / r.height) * 2 + 1,
+      );
+      ray.setFromCamera(ndc, camera);
+      return ray.ray.intersectPlane(plane, out);
+    };
+    const move = (e: PointerEvent) => {
+      toPlane(e, pointerWorld.current);
+    };
+    const down = (e: PointerEvent) => {
+      const v = new THREE.Vector3();
+      if (toPlane(e, v)) {
+        pings.current.push({ x: v.x, y: v.y, z: v.z, t0: time.current });
+        if (pings.current.length > 4) pings.current.shift();
+      }
+    };
+    el.addEventListener("pointermove", move, { passive: true });
+    el.addEventListener("pointerdown", down);
+    return () => {
+      el.removeEventListener("pointermove", move);
+      el.removeEventListener("pointerdown", down);
+    };
+  }, [camera, gl]);
 
   /* swarm — scattered intent → tight cluster around the prompt */
   const swarm = useMemo(() => {
@@ -97,7 +152,7 @@ function Story({ p }: { p: { current: number } }) {
     for (let i = 0; i < N; i++) {
       const j = i * 3;
       scatter[j] = -7 + (Math.random() - 0.5) * 9;
-      scatter[j + 1] = (Math.random() - 0.5) * 6;
+      scatter[j + 1] = (Math.random() - 0.5) * 4.6;
       scatter[j + 2] = (Math.random() - 0.5) * 5;
       v.randomDirection().multiplyScalar(0.38 * Math.cbrt(Math.random()));
       cluster[j] = v.x;
@@ -197,12 +252,12 @@ function Story({ p }: { p: { current: number } }) {
 
   useEffect(
     () => () => {
-      for (const t of [glowTeal, glowAmber, ringAmber]) t.dispose();
+      for (const t of [glowTeal, glowAmber, ringAmber, ringTeal]) t.dispose();
       for (const g of [swarm.geo, dustGeo, cubeGeo, trail.geo, branch.geo, mainLine.geo])
         g.dispose();
       for (const m of [trail.mat, branch.mat, mainLine.mat]) m.dispose();
     },
-    [glowTeal, glowAmber, ringAmber, swarm, dustGeo, cubeGeo, trail, branch, mainLine],
+    [glowTeal, glowAmber, ringAmber, ringTeal, swarm, dustGeo, cubeGeo, trail, branch, mainLine],
   );
 
   useFrame((state, delta) => {
@@ -220,14 +275,26 @@ function Story({ p }: { p: { current: number } }) {
     const eDissolve = ss(0.86, 1.0, t);
     const alive = 1 - eDissolve;
 
-    /* swarm */
+    /* pointer ease + live pings */
+    pointerEase.current.lerp(pointerWorld.current, 1 - Math.exp(-10 * delta));
+    pings.current = pings.current.filter((pg) => tm - pg.t0 < PING_LIFE);
+    const livePings = pings.current;
+    const pe = pointerEase.current;
+
+    /* swarm — drift, gather, stir under the cursor, ripple on ping */
+    const driftA = tm * 0.04;
+    const cA = Math.cos(driftA);
+    const sA = Math.sin(driftA);
     const a = swarm.attr.array as Float32Array;
     for (let i = 0; i < swarm.N; i++) {
       const j = i * 3;
       const wob = Math.sin(tm * 1.4 + i) * 0.05;
-      let x = swarm.scatter[j]!;
+      // scatter base slowly orbits its centroid so the field never sits still
+      const sx = swarm.scatter[j]! + 7;
+      const sz = swarm.scatter[j + 2]!;
+      let x = -7 + sx * cA - sz * sA;
       let y = swarm.scatter[j + 1]! + wob;
-      let z = swarm.scatter[j + 2]!;
+      let z = sx * sA + sz * cA;
       x += (px + swarm.cluster[j]! - x) * eGather;
       y += (swarm.cluster[j + 1]! + wob * 0.5 - y) * eGather;
       z += (swarm.cluster[j + 2]! - z) * eGather;
@@ -236,6 +303,34 @@ function Story({ p }: { p: { current: number } }) {
         y += (swarm.end[j + 1]! - y) * eDissolve;
         z += (swarm.end[j + 2]! - z) * eDissolve;
       }
+      // cursor stir — particles shy away, spring back when the hand moves on
+      let dx = x - pe.x;
+      let dy = y - pe.y;
+      let dz = z - pe.z;
+      const d2 = dx * dx + dy * dy + dz * dz;
+      if (d2 < 2.56) {
+        const d = Math.sqrt(d2) || 1e-4;
+        const f = (1 - d / 1.6) * (1 - d / 1.6) * 0.85;
+        x += (dx / d) * f;
+        y += (dy / d) * f;
+        z += (dz / d) * f * 0.4;
+      }
+      // sonar pings — a shock front passes through each particle once
+      for (const pg of livePings) {
+        const age = tm - pg.t0;
+        dx = x - pg.x;
+        dy = y - pg.y;
+        dz = z - pg.z;
+        const d = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1e-4;
+        const front = d - age * PING_SPEED;
+        const g =
+          Math.exp(-(front * front) / 0.3) * Math.exp(-age * 1.5) * 0.55;
+        if (g > 0.004) {
+          x += (dx / d) * g;
+          y += (dy / d) * g;
+          z += (dz / d) * g * 0.5;
+        }
+      }
       a[j] = x;
       a[j + 1] = y;
       a[j + 2] = z;
@@ -243,7 +338,23 @@ function Story({ p }: { p: { current: number } }) {
     swarm.attr.needsUpdate = true;
     if (swarmMat.current) {
       swarmMat.current.opacity =
-        (0.3 + 0.55 * eGather) * (1 - ss(0.93, 1, t));
+        (0.42 + 0.45 * eGather) * (1 - ss(0.93, 1, t));
+    }
+
+    /* expanding click rings */
+    for (let i = 0; i < ringPool.current.length; i++) {
+      const sprite = ringPool.current[i];
+      const mat = ringMats.current[i];
+      if (!sprite || !mat) continue;
+      const pg = livePings[i];
+      if (!pg) {
+        mat.opacity = 0;
+        continue;
+      }
+      const age = tm - pg.t0;
+      sprite.position.set(pg.x, pg.y, pg.z);
+      sprite.scale.setScalar(0.25 + age * PING_SPEED * 2.4);
+      mat.opacity = Math.exp(-age * 2.2) * 0.7;
     }
 
     /* core — the prompt, then the working agent */
@@ -345,7 +456,7 @@ function Story({ p }: { p: { current: number } }) {
         <pointsMaterial
           ref={swarmMat}
           color={TEAL}
-          size={0.055}
+          size={0.07}
           sizeAttenuation
           transparent
           opacity={0}
@@ -422,6 +533,27 @@ function Story({ p }: { p: { current: number } }) {
           blending={THREE.AdditiveBlending}
         />
       </sprite>
+
+      {/* sonar ring pool — one sprite per live click */}
+      {[0, 1, 2, 3].map((i) => (
+        <sprite
+          key={i}
+          ref={(s) => {
+            ringPool.current[i] = s;
+          }}
+        >
+          <spriteMaterial
+            ref={(m) => {
+              ringMats.current[i] = m;
+            }}
+            map={ringTeal}
+            transparent
+            opacity={0}
+            depthWrite={false}
+            blending={THREE.AdditiveBlending}
+          />
+        </sprite>
+      ))}
     </group>
   );
 }

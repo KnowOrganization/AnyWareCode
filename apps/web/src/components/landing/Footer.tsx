@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Container } from "@/components/ui/Container";
 import { Parallax } from "./fx/Parallax";
 import * as site from "@/lib/site";
+import { LogoWord } from "../ui/Logo";
 
 /**
  * Colophon: link columns over a giant outline wordmark, closed by the
@@ -13,9 +14,7 @@ export function Footer() {
       <Container>
         <div className="grid gap-10 py-14 sm:grid-cols-[1.2fr_repeat(3,minmax(0,1fr))]">
           <div>
-            <p className="font-display text-lg font-semibold tracking-tight">
-              AnyWare<span className="text-primary">Code</span>
-            </p>
+            <LogoWord className="h-48" />
             <p className="mt-3 max-w-xs text-sm text-muted">
               The accountable Discord-native coding agent. Belongs to the
               server, not a seat.
