@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { listAudit } from "@anywherecode/db";
+import { listAudit } from "@anywarecode/db";
 import { db } from "@/lib/db";
 import { GlassCard } from "@/components/ui/GlassCard";
 

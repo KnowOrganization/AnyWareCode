@@ -1,7 +1,7 @@
 import {
   listGuildInstallations,
   listPendingOssApplications,
-} from "@anywherecode/db";
+} from "@anywarecode/db";
 import { db } from "@/lib/db";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { OssDecision } from "./OssDecision";

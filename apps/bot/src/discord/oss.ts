@@ -4,7 +4,7 @@ import {
   type ChatInputCommandInteraction,
 } from "discord.js";
 import { eq } from "drizzle-orm";
-import { schema } from "@anywherecode/db";
+import { schema } from "@anywarecode/db";
 import { listInstallations } from "../github/installations.js";
 import { ensureGuild } from "./gates.js";
 import type { BotContext } from "./interactions.js";

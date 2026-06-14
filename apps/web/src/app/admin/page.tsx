@@ -3,7 +3,7 @@ import {
   countGuildsByTierAndStatus,
   listPendingOssApplications,
   packRevenueTotals,
-} from "@anywherecode/db";
+} from "@anywarecode/db";
 import { db } from "@/lib/db";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { PLAN_PRICE } from "@/lib/razorpay";
@@ -26,9 +26,6 @@ export default async function AdminDashboard() {
 
   const total = counts.reduce((n, c) => n + c.n, 0);
   const active = counts.filter((c) => c.subStatus === "active");
-  const trialing = counts
-    .filter((c) => c.subStatus === "trialing")
-    .reduce((n, c) => n + c.n, 0);
   // MRR estimate in USD (active paid guilds × USD plan price).
   const mrrCents = active.reduce((sum, c) => {
     const price =
@@ -52,7 +49,7 @@ export default async function AdminDashboard() {
           label="Pack revenue (USD)"
           value={`$${(pack.totalCents / 100).toFixed(0)}`}
         />
-        <Stat label="Trialing" value={trialing} />
+        <Stat label="Free servers" value={byTier("free")} />
       </div>
 
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">

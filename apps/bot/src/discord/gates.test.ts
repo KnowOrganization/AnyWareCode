@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import type { Guild } from "@anywherecode/db";
+import type { Guild } from "@anywarecode/db";
 import {
-  allowPlatformKey,
   capState,
   ensureGuild,
   nextMonthStart,
@@ -14,7 +13,7 @@ function guildRow(overrides: Partial<Guild> = {}): Guild {
   return {
     id: "g1",
     allowedRoleId: null,
-    taskCap: 10,
+    taskCap: 15,
     concurrency: 1,
     packTasksRemaining: 0,
     tasksUsedThisMonth: 0,
@@ -22,19 +21,17 @@ function guildRow(overrides: Partial<Guild> = {}): Guild {
     capResetAt: new Date("2099-01-01T00:00:00Z"),
     createdAt: new Date(),
     updatedAt: new Date(),
-    planId: null,
+    planId: "free",
     razorpayCustomerId: null,
     razorpaySubscriptionId: null,
-    subStatus: "active",
+    subStatus: "free",
     subSource: null,
     requireLinkedSponsor: false,
-    trialEndsAt: null,
     currentPeriodEnd: null,
     ossStatus: "none",
     ossAppliedAt: null,
     ossReviewedAt: null,
     suspended: false,
-    trialGatesPassedAt: null,
     shiplogChannelId: null,
     planVoteMode: "instant",
     planVoteRoleId: null,
@@ -48,10 +45,20 @@ function guildRow(overrides: Partial<Guild> = {}): Guild {
 }
 
 describe("resolveTier", () => {
-  it("maps subscription state to a single tier", () => {
-    expect(resolveTier(guildRow({ subStatus: "trialing" }))).toEqual({
-      kind: "trial",
+  it("defaults every guild to the Free floor", () => {
+    expect(resolveTier(guildRow({ subStatus: "free", planId: "free" }))).toEqual(
+      { kind: "free" },
+    );
+    expect(resolveTier(guildRow({ subStatus: "free", planId: null }))).toEqual({
+      kind: "free",
     });
+    // A canceled paid plan falls back to Free, never to nothing.
+    expect(
+      resolveTier(guildRow({ subStatus: "canceled", planId: "pro" })),
+    ).toEqual({ kind: "free" });
+  });
+
+  it("maps approved OSS and active/past_due paid plans", () => {
     expect(
       resolveTier(
         guildRow({ subStatus: "free", planId: "oss", ossStatus: "approved" }),
@@ -63,159 +70,128 @@ describe("resolveTier", () => {
     expect(
       resolveTier(guildRow({ subStatus: "past_due", planId: "studio" })),
     ).toEqual({ kind: "paid", planId: "studio" });
-    expect(resolveTier(guildRow({ subStatus: "canceled" }))).toEqual({
-      kind: "none",
-      reason: "canceled",
-    });
-    expect(resolveTier(guildRow({ subStatus: "free" }))).toEqual({
-      kind: "none",
-      reason: "trial_expired",
-    });
   });
 
-  it("requires OSS approval, not just the plan id", () => {
+  it("requires OSS approval and a live subscription, else Free", () => {
     expect(
       resolveTier(
         guildRow({ subStatus: "free", planId: "oss", ossStatus: "pending" }),
       ),
-    ).toEqual({ kind: "none", reason: "trial_expired" });
+    ).toEqual({ kind: "free" });
+    // Canceled OSS grant also drops to Free.
+    expect(
+      resolveTier(
+        guildRow({ subStatus: "canceled", planId: "oss", ossStatus: "approved" }),
+      ),
+    ).toEqual({ kind: "free" });
   });
 });
 
 describe("capState", () => {
-  it("allows under the cap and blocks at it", () => {
-    expect(capState(guildRow({ tasksUsedThisMonth: 9 }), "code").exceeded).toBe(
+  it("allows under the /code cap and blocks at it", () => {
+    expect(capState(guildRow({ tasksUsedThisMonth: 14 }), "code").exceeded).toBe(
       false,
     );
     expect(
-      capState(guildRow({ tasksUsedThisMonth: 10 }), "code").exceeded,
+      capState(guildRow({ tasksUsedThisMonth: 15 }), "code").exceeded,
     ).toBe(true);
   });
 
-  it("gives /ask a looser, separate cap", () => {
-    const guild = guildRow({ tasksUsedThisMonth: 10, asksUsedThisMonth: 39 });
-    expect(capState(guild, "ask")).toMatchObject({
-      exceeded: false,
-      cap: 40,
-      used: 39,
-    });
+  it("gives /ask unlimited capacity on every tier", () => {
+    for (const guild of [
+      guildRow({ planId: "free", asksUsedThisMonth: 9999 }),
+      guildRow({ planId: "pro", subStatus: "active", asksUsedThisMonth: 9999 }),
+      guildRow({
+        planId: "oss",
+        subStatus: "free",
+        ossStatus: "approved",
+        asksUsedThisMonth: 9999,
+      }),
+    ]) {
+      expect(capState(guild, "ask")).toMatchObject({
+        exceeded: false,
+        unlimited: true,
+        cap: Number.POSITIVE_INFINITY,
+      });
+    }
   });
 
   it("treats an overdue reset as a fresh month", () => {
     const guild = guildRow({
-      tasksUsedThisMonth: 10,
+      tasksUsedThisMonth: 15,
       capResetAt: new Date("2020-01-01T00:00:00Z"),
     });
     const state = capState(guild, "code", new Date("2020-02-15T00:00:00Z"));
     expect(state).toMatchObject({ exceeded: false, used: 0, needsReset: true });
   });
 
-  it("falls back to pack tasks once the plan cap is exhausted (paid tier)", () => {
+  it("falls back to pack tasks once the /code cap is exhausted — on every tier", () => {
+    for (const planId of ["free", "pro"]) {
+      const guild = guildRow({
+        planId,
+        subStatus: planId === "pro" ? "active" : "free",
+        tasksUsedThisMonth: 15,
+        packTasksRemaining: 3,
+      });
+      expect(capState(guild, "code")).toMatchObject({
+        exceeded: false,
+        packRemaining: 3,
+      });
+    }
+  });
+
+  it("packs never fund /ask (and /ask is unlimited anyway)", () => {
     const guild = guildRow({
       planId: "pro",
-      tasksUsedThisMonth: 10,
-      packTasksRemaining: 3,
-    });
-    expect(capState(guild, "code")).toMatchObject({
-      exceeded: false,
-      packRemaining: 3,
-    });
-  });
-
-  it("never spends packs during trial or without a plan", () => {
-    const trial = guildRow({
-      subStatus: "trialing",
-      tasksUsedThisMonth: 10,
-      packTasksRemaining: 3,
-    });
-    expect(capState(trial, "code")).toMatchObject({
-      exceeded: true,
-      packRemaining: 0,
-    });
-    const none = guildRow({
-      subStatus: "free",
-      tasksUsedThisMonth: 10,
-      packTasksRemaining: 3,
-    });
-    expect(capState(none, "code").exceeded).toBe(true);
-    expect(packSpendable(trial)).toBe(false);
-    expect(packSpendable(none)).toBe(false);
-  });
-
-  it("packs never fund /ask", () => {
-    const guild = guildRow({
-      planId: "pro",
-      asksUsedThisMonth: 40,
-      packTasksRemaining: 3,
-    });
-    expect(capState(guild, "ask")).toMatchObject({
-      exceeded: true,
-      packRemaining: 0,
-    });
-  });
-
-  it("gives the OSS tier unlimited /ask but a capped /code", () => {
-    const guild = guildRow({
-      subStatus: "free",
-      planId: "oss",
-      ossStatus: "approved",
-      taskCap: 30,
-      tasksUsedThisMonth: 30,
+      subStatus: "active",
       asksUsedThisMonth: 9999,
+      packTasksRemaining: 3,
     });
     expect(capState(guild, "ask")).toMatchObject({
       exceeded: false,
       unlimited: true,
+      packRemaining: 0,
     });
-    expect(capState(guild, "code").exceeded).toBe(true);
   });
 });
 
-describe("allowPlatformKey", () => {
-  it("allows only while trialing", () => {
-    expect(allowPlatformKey(guildRow({ subStatus: "trialing" }))).toBe(true);
-    expect(allowPlatformKey(guildRow({ subStatus: "active" }))).toBe(false);
-    expect(allowPlatformKey(guildRow({ subStatus: "free" }))).toBe(false);
-    expect(allowPlatformKey(guildRow({ subStatus: "past_due" }))).toBe(false);
+describe("packSpendable", () => {
+  it("is true on every tier (all tiers are entitled)", () => {
+    expect(packSpendable(guildRow({ subStatus: "free" }))).toBe(true);
+    expect(packSpendable(guildRow({ subStatus: "active", planId: "pro" }))).toBe(
+      true,
+    );
+    expect(packSpendable(guildRow({ subStatus: "canceled" }))).toBe(true);
   });
 });
 
 describe("planSummary", () => {
-  it("reports trial days left while trialing", () => {
-    const now = new Date("2026-06-11T00:00:00Z");
-    const s = planSummary(
-      guildRow({
-        subStatus: "trialing",
-        trialEndsAt: new Date("2026-06-16T00:00:00Z"),
-      }),
-      now,
-    );
-    expect(s.tier).toBe("Trial");
-    expect(s.trialDaysLeft).toBe(5);
+  it("labels the Free floor", () => {
+    const s = planSummary(guildRow({ subStatus: "free", planId: "free" }));
+    expect(s.tier).toBe("Free");
+    expect(s.askCap).toBe(Number.POSITIVE_INFINITY);
   });
 
   it("labels paid tiers from the plan row, flagging overdue payment", () => {
     const pro = planSummary(
-      guildRow({ subStatus: "active", planId: "pro", taskCap: 100 }),
+      guildRow({ subStatus: "active", planId: "pro", taskCap: 150 }),
     );
     expect(pro.tier).toBe("Pro");
-    expect(pro.codeCap).toBe(100);
-    expect(pro.askCap).toBe(400);
-    expect(pro.trialDaysLeft).toBeNull();
+    expect(pro.codeCap).toBe(150);
+    expect(pro.askCap).toBe(Number.POSITIVE_INFINITY);
     const overdue = planSummary(
       guildRow({ subStatus: "past_due", planId: "studio" }),
     );
     expect(overdue.tier).toBe("Studio (payment overdue)");
   });
 
-  it("labels post-trial guilds without a plan", () => {
-    expect(planSummary(guildRow({ subStatus: "free" })).tier).toBe("No plan");
-    expect(planSummary(guildRow({ subStatus: "canceled" })).tier).toBe(
-      "Canceled",
-    );
+  it("shows canceled paid guilds as Free", () => {
+    expect(
+      planSummary(guildRow({ subStatus: "canceled", planId: "pro" })).tier,
+    ).toBe("Free");
   });
 
-  it("surfaces the pack balance and OSS unlimited /ask", () => {
+  it("surfaces the pack balance and the OSS label", () => {
     const s = planSummary(
       guildRow({
         subStatus: "free",
@@ -228,23 +204,12 @@ describe("planSummary", () => {
     expect(s.packRemaining).toBe(12);
     expect(s.askCap).toBe(Number.POSITIVE_INFINITY);
   });
-
-  it("clamps an elapsed trial to zero days", () => {
-    const s = planSummary(
-      guildRow({
-        subStatus: "trialing",
-        trialEndsAt: new Date("2020-01-01T00:00:00Z"),
-      }),
-      new Date("2026-06-11T00:00:00Z"),
-    );
-    expect(s.trialDaysLeft).toBe(0);
-  });
 });
 
-describe("ensureGuild trial expiry", () => {
-  const config = { TRIAL_DAYS: 14, PLATFORM_TRIAL_TASK_CAP: 10 };
+describe("ensureGuild", () => {
+  const config = { FREE_TASK_CAP: 15 };
 
-  function mockDb(existing: Guild) {
+  function mockUpdateDb(existing: Guild) {
     const mockReturning = vi.fn().mockResolvedValue([existing]);
     const mockWhere = vi.fn(() => ({ returning: mockReturning }));
     const mockSet = vi.fn((_updates: Record<string, unknown>) => ({
@@ -258,34 +223,52 @@ describe("ensureGuild trial expiry", () => {
     return { db, mockSet, mockUpdate };
   }
 
-  it("strips entitlements when the trial elapses without a plan", async () => {
-    const { db, mockSet } = mockDb(
-      guildRow({
-        subStatus: "trialing",
-        trialEndsAt: new Date("2026-01-01T00:00:00Z"),
-        planId: null,
-      }),
-    );
+  it("creates new guilds on the Free plan", async () => {
+    const created = guildRow();
+    const mockReturning = vi.fn().mockResolvedValue([created]);
+    const mockOnConflict = vi.fn(() => ({ returning: mockReturning }));
+    const mockValues = vi.fn(() => ({ onConflictDoNothing: mockOnConflict }));
+    const mockInsert = vi.fn(() => ({ values: mockValues }));
+    const db = {
+      insert: mockInsert,
+      query: { guilds: { findFirst: vi.fn().mockResolvedValue(undefined) } },
+    } as unknown as Parameters<typeof ensureGuild>[0];
     await ensureGuild(db, "g1", config, new Date("2026-02-01T00:00:00Z"));
-    expect(mockSet).toHaveBeenCalledWith(
-      expect.objectContaining({ subStatus: "free", taskCap: 0, concurrency: 1 }),
+    expect(mockValues).toHaveBeenCalledWith(
+      expect.objectContaining({
+        planId: "free",
+        taskCap: 15,
+        concurrency: 1,
+        subStatus: "free",
+      }),
     );
   });
 
-  it("never clobbers a plan that landed mid-trial", async () => {
-    const { db, mockUpdate } = mockDb(
-      guildRow({
-        subStatus: "trialing",
-        trialEndsAt: new Date("2026-01-01T00:00:00Z"),
-        planId: "pro",
+  it("normalizes a canceled paid guild onto the Free floor", async () => {
+    const { db, mockSet } = mockUpdateDb(
+      guildRow({ subStatus: "canceled", planId: "pro", taskCap: 0, concurrency: 2 }),
+    );
+    await ensureGuild(db, "g1", config, new Date("2026-02-01T00:00:00Z"));
+    expect(mockSet).toHaveBeenCalledWith(
+      expect.objectContaining({
+        planId: "free",
+        subStatus: "free",
+        taskCap: 15,
+        concurrency: 1,
       }),
+    );
+  });
+
+  it("leaves an active paid plan untouched", async () => {
+    const { db, mockUpdate } = mockUpdateDb(
+      guildRow({ subStatus: "active", planId: "pro", taskCap: 150, concurrency: 2 }),
     );
     await ensureGuild(db, "g1", config, new Date("2026-02-01T00:00:00Z"));
     expect(mockUpdate).not.toHaveBeenCalled();
   });
 
   it("monthly reset clears counters but not the pack balance", async () => {
-    const { db, mockSet } = mockDb(
+    const { db, mockSet } = mockUpdateDb(
       guildRow({
         capResetAt: new Date("2026-01-01T00:00:00Z"),
         tasksUsedThisMonth: 7,

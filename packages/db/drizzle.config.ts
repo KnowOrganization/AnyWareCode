@@ -10,7 +10,7 @@ export default defineConfig({
   dbCredentials: {
     url:
       process.env.DATABASE_URL ??
-      "postgres://anywherecode:anywherecode@localhost:5432/anywherecode",
+      "postgres://anywarecode:anywarecode@localhost:5432/anywarecode",
     ssl: useSsl ? { rejectUnauthorized: false } : undefined,
   },
 });

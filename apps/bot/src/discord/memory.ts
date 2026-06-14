@@ -8,7 +8,7 @@ import {
   type ModalSubmitInteraction,
 } from "discord.js";
 import { and, eq } from "drizzle-orm";
-import { schema, type Guild } from "@anywherecode/db";
+import { schema, type Guild } from "@anywarecode/db";
 import { canInvoke, ensureGuild, resolveTier } from "./gates.js";
 import type { BotContext } from "./interactions.js";
 import { checkTaskPreconditions, launchTask } from "./launch.js";

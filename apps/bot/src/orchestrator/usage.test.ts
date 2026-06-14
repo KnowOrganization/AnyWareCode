@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { recordTaskPackPurchase } from "@anywherecode/db";
+import { recordTaskPackPurchase } from "@anywarecode/db";
 import { bumpUsage, claimUnits, refundUsage } from "./usage.js";
 
 /**

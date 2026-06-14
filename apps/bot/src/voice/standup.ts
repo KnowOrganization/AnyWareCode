@@ -15,12 +15,12 @@ import {
   type VoiceConnection,
 } from "@discordjs/voice";
 import { eq } from "drizzle-orm";
-import { schema } from "@anywherecode/db";
+import { schema } from "@anywarecode/db";
 import { resolveLlmAuth } from "../llm/credentials.js";
 import { extractActionItems } from "../llm/standup.js";
 import { captureError, log } from "../observability.js";
 import { sanitizeUntrusted } from "../security/quarantine.js";
-import { canInvoke, ensureGuild, resolveTier } from "../discord/gates.js";
+import { canInvoke, ensureGuild } from "../discord/gates.js";
 import type { BotContext } from "../discord/interactions.js";
 import { truncate } from "../discord/launch.js";
 import { createProposal, setProposalMessageId } from "../discord/proposals.js";
@@ -75,14 +75,6 @@ async function startStandup(
   const guildId = interaction.guildId!;
   const guild = await ensureGuild(ctx.db, guildId, ctx.config);
 
-  const tier = resolveTier(guild);
-  if (!(tier.kind === "paid" && tier.planId === "studio")) {
-    await interaction.reply({
-      content: "Standup Mode is a Studio-tier feature. See `/billing`.",
-      flags: MessageFlags.Ephemeral,
-    });
-    return;
-  }
   if (!interaction.member || !canInvoke(guild, interaction.member)) {
     await interaction.reply({
       content: "You don't have permission to start a standup session.",

@@ -84,7 +84,7 @@ describe("renderContext", () => {
             text: "first",
           },
           {
-            author: "AnywhereCode",
+            author: "AnyWareCode",
             isBot: true,
             timestamp: "2026-06-11T14:02:40Z",
             text: "x".repeat(500),
@@ -92,8 +92,8 @@ describe("renderContext", () => {
         ],
       }),
     );
-    expect(out.indexOf("first")).toBeLessThan(out.indexOf("AnywhereCode"));
-    expect(out).toContain("AnywhereCode (bot):");
+    expect(out.indexOf("first")).toBeLessThan(out.indexOf("AnyWareCode"));
+    expect(out).toContain("AnyWareCode (bot):");
     expect(out).not.toContain("x".repeat(301));
   });
 

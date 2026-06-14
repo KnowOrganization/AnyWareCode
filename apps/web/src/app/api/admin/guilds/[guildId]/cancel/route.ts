@@ -4,7 +4,7 @@ import {
   adminSetGuildBilling,
   getGuild,
   writeAudit,
-} from "@anywherecode/db";
+} from "@anywarecode/db";
 import { db } from "@/lib/db";
 import { withAdmin } from "@/lib/adminRoute";
 import { guildAuditView } from "@/lib/adminViews";

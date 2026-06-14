@@ -1,4 +1,4 @@
-import type { TaskSpec } from "@anywherecode/shared";
+import type { TaskSpec } from "@anywarecode/shared";
 
 /**
  * `claw doctor`-style preflight: cheap, static validation of the run's

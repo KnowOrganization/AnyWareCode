@@ -5,7 +5,7 @@ import {
   schema,
   type Db,
   type Guild,
-} from "@anywherecode/db";
+} from "@anywarecode/db";
 import { handleIssueEvent } from "../discord/issue-feed.js";
 import type { BotContext } from "../discord/interactions.js";
 import { applyPreviewToCard } from "../discord/preview-card.js";

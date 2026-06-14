@@ -65,9 +65,7 @@ export async function deleteGuildData(db: Db, guildId: string): Promise<void> {
   await db
     .delete(schema.guildInstallations)
     .where(eq(schema.guildInstallations.guildId, guildId));
-  // github_org_trials intentionally survives guild deletion: the org's trial
-  // is consumed forever (re-adding the bot must not grant a fresh trial).
-  // user_links is user-keyed, not guild-keyed — it survives too.
+  // user_links is user-keyed, not guild-keyed — it survives guild deletion.
   await db.delete(schema.guilds).where(eq(schema.guilds.id, guildId));
 }
 
@@ -256,33 +254,6 @@ export async function setSetting(
     });
 }
 
-// --- GitHub org trials ---
-
-/**
- * Claim the platform-key trial for a GitHub org/user login. First guild wins;
- * returns the owning row either way.
- */
-export async function claimOrgTrial(db: Db, orgLogin: string, guildId: string) {
-  const key = orgLogin.toLowerCase();
-  await db
-    .insert(schema.githubOrgTrials)
-    .values({ orgLogin: key, guildId })
-    .onConflictDoNothing();
-  const row = await db.query.githubOrgTrials.findFirst({
-    where: eq(schema.githubOrgTrials.orgLogin, key),
-  });
-  if (!row) throw new Error(`org trial row for ${key} vanished after upsert`);
-  return row;
-}
-
-export async function getOrgTrial(db: Db, orgLogin: string) {
-  return (
-    (await db.query.githubOrgTrials.findFirst({
-      where: eq(schema.githubOrgTrials.orgLogin, orgLogin.toLowerCase()),
-    })) ?? null
-  );
-}
-
 // --- OSS Community tier admin ---
 
 export async function listPendingOssApplications(db: Db) {
@@ -370,12 +341,7 @@ export async function setGuildRazorpayCustomer(
 // package so the web app resolves a single drizzle instance. ---
 
 /** Statuses the admin panel may set directly. */
-export type AdminSubStatus =
-  | "trialing"
-  | "active"
-  | "past_due"
-  | "canceled"
-  | "free";
+export type AdminSubStatus = "active" | "past_due" | "canceled" | "free";
 
 /**
  * Admin override of a guild's billing. Forces subSource="admin" whenever a
@@ -392,7 +358,6 @@ export async function adminSetGuildBilling(
     taskCap?: number;
     concurrency?: number;
     currentPeriodEnd?: Date | null;
-    trialEndsAt?: Date | null;
     suspended?: boolean;
     packTasksRemaining?: number;
     razorpaySubscriptionId?: string | null;
@@ -412,7 +377,6 @@ export async function adminSetGuildBilling(
   if (patch.concurrency !== undefined) set.concurrency = patch.concurrency;
   if (patch.currentPeriodEnd !== undefined)
     set.currentPeriodEnd = patch.currentPeriodEnd;
-  if (patch.trialEndsAt !== undefined) set.trialEndsAt = patch.trialEndsAt;
   if (patch.suspended !== undefined) set.suspended = patch.suspended;
   if (patch.packTasksRemaining !== undefined)
     set.packTasksRemaining = Math.max(0, patch.packTasksRemaining);

@@ -46,7 +46,7 @@ export const commands = [
     ),
   new SlashCommandBuilder()
     .setName("connect")
-    .setDescription("Connect services to AnywhereCode")
+    .setDescription("Connect services to AnyWareCode")
     .addSubcommand((sub) =>
       sub
         .setName("llm")
@@ -270,7 +270,7 @@ export const commands = [
     .setDescription("Cancel the task running in this thread"),
   new SlashCommandBuilder()
     .setName("config")
-    .setDescription("Configure AnywhereCode for this server")
+    .setDescription("Configure AnyWareCode for this server")
     .addSubcommand((sub) =>
       sub
         .setName("role")

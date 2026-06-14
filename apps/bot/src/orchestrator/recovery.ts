@@ -1,6 +1,6 @@
 import Docker from "dockerode";
 import { inArray } from "drizzle-orm";
-import { schema, type Db } from "@anywherecode/db";
+import { schema, type Db } from "@anywarecode/db";
 import { refundUsage } from "./usage.js";
 
 export async function recoverStaleTasks(
@@ -36,7 +36,7 @@ export async function killStaleContainers(): Promise<void> {
   const docker = new Docker();
   try {
     const containers = await docker.listContainers({
-      filters: JSON.stringify({ label: ["anywherecode.task"] }),
+      filters: JSON.stringify({ label: ["anywarecode.task"] }),
     });
     await Promise.all(
       containers.map((c) =>

@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
-import type { TaskSpec } from "@anywherecode/shared";
+import type { TaskSpec } from "@anywarecode/shared";
 import { redactSecrets } from "./io.js";
 import { detectGameEngine } from "./repo.js";
 

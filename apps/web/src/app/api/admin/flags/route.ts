@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getSetting, setSetting, writeAudit } from "@anywherecode/db";
+import { getSetting, setSetting, writeAudit } from "@anywarecode/db";
 import { AdminForbidden, requireAdmin } from "@/lib/admin";
 import { withAdmin } from "@/lib/adminRoute";
 import { db } from "@/lib/db";

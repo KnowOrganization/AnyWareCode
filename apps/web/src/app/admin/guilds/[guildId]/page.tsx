@@ -4,7 +4,7 @@ import {
   listAudit,
   listPaymentsForGuild,
   listPlans,
-} from "@anywherecode/db";
+} from "@anywarecode/db";
 import { db } from "@/lib/db";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { Badge } from "@/components/ui/Badge";
@@ -70,10 +70,6 @@ export default async function AdminGuildDetail({
         <Field
           label="Period end"
           value={guild.currentPeriodEnd?.toISOString().slice(0, 10)}
-        />
-        <Field
-          label="Trial ends"
-          value={guild.trialEndsAt?.toISOString().slice(0, 10)}
         />
         <Field
           label="Razorpay sub"

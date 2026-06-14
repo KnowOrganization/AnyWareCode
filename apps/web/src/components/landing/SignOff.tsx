@@ -44,7 +44,7 @@ export function SignOff() {
             <code className="rounded-md border border-line-strong bg-surface px-1.5 py-0.5 font-mono text-[0.9em] text-primary">
               /code
             </code>
-            . Fourteen days on us — your key, your rules after that.
+            . Free to start — your key, your rules, every feature included.
           </p>
           <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <Magnetic>

@@ -4,11 +4,11 @@ import {
   type ChatInputCommandInteraction,
 } from "discord.js";
 import { and, eq } from "drizzle-orm";
-import { getPlan, schema, type Db, type Guild } from "@anywherecode/db";
+import { getPlan, schema, type Db, type Guild } from "@anywarecode/db";
 import type { Config } from "../config.js";
 import { decryptCredential, encryptCredential } from "../llm/credentials.js";
 import { captureError } from "../observability.js";
-import { ensureGuild, resolveTier } from "./gates.js";
+import { ensureGuild } from "./gates.js";
 import type { BotContext } from "./interactions.js";
 
 /**
@@ -25,10 +25,7 @@ async function mcpAllowed(
   ctx: Pick<BotContext, "db">,
   guild: Guild,
 ): Promise<boolean> {
-  const tier = resolveTier(guild);
-  const planId =
-    tier.kind === "oss" ? "oss" : tier.kind === "paid" ? tier.planId : null;
-  const plan = planId ? await getPlan(ctx.db, planId) : null;
+  const plan = guild.planId ? await getPlan(ctx.db, guild.planId) : null;
   return Boolean(plan?.features.includes("mcp_extensions"));
 }
 

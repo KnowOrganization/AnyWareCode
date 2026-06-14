@@ -10,9 +10,7 @@ const configSchema = z.object({
     .min(1)
     .transform((key) => key.replaceAll("\\n", "\n")),
   /** Slug from app registration; used to build the install URL. */
-  GITHUB_APP_SLUG: z.string().min(1).default("anywherecode"),
-  /** Platform fallback key; optional when guilds supply their own via /connect llm. */
-  ANTHROPIC_API_KEY: z.string().min(1).optional(),
+  GITHUB_APP_SLUG: z.string().min(1).default("anywarecode"),
   /** AES-256-GCM encryption key for stored guild credentials. Min 32 chars. */
   CREDENTIAL_SECRET: z.string().min(32),
   /** Comma-separated hostnames permitted for custom LLM base URLs; empty = allow all (dev). */
@@ -32,15 +30,13 @@ const configSchema = z.object({
   /** Secret for signing the install `state` param linking guild<->installation. */
   STATE_SECRET: z.string().min(16),
   HTTP_PORT: z.coerce.number().int().default(3000),
-  RUNNER_IMAGE: z.string().default("anywherecode-runner"),
+  RUNNER_IMAGE: z.string().default("anywarecode-runner"),
   /** Docker network the runner joins; empty string = default bridge (dev). */
   RUNNER_NETWORK: z.string().default(""),
   /** http://host:port of the egress allowlist proxy, if RUNNER_NETWORK is set. */
   RUNNER_HTTPS_PROXY: z.string().default(""),
   /** Hard wall-clock limit per task. */
   TASK_TIMEOUT_MINUTES: z.coerce.number().int().default(30),
-  /** Tighter wall-clock limit for platform-key (trial) tasks. */
-  TRIAL_TASK_TIMEOUT_MINUTES: z.coerce.number().int().default(15),
   /** Minutes a GitHub-App install link stays valid before it must be reissued. */
   INSTALL_STATE_TTL_MINUTES: z.coerce.number().int().default(10),
   /** Model for bot-side mention classification/replies (custom providers use their own). */
@@ -55,14 +51,8 @@ const configSchema = z.object({
   NODE_ENV: z.string().default("development"),
   /** Max task/question prompt length; guards token/cap abuse. */
   MAX_PROMPT_CHARS: z.coerce.number().int().default(8000),
-  /** Free trial length (days). Trial runs on the platform key. */
-  TRIAL_DAYS: z.coerce.number().int().default(14),
-  /** Monthly /code cap during the trial (bounds platform-key token cost). */
-  PLATFORM_TRIAL_TASK_CAP: z.coerce.number().int().default(10),
-  /** Trial abuse gate: minimum Discord server age (snowflake-derived). */
-  TRIAL_MIN_SERVER_AGE_DAYS: z.coerce.number().int().default(30),
-  /** Trial abuse gate: minimum non-bot members. */
-  TRIAL_MIN_HUMAN_MEMBERS: z.coerce.number().int().default(5),
+  /** Monthly /code cap on the Free plan (the BYO-LLM default tier). */
+  FREE_TASK_CAP: z.coerce.number().int().default(15),
   /** GitHub App webhook secret; unset = /github/webhook disabled. */
   GITHUB_WEBHOOK_SECRET: z.string().min(16).optional(),
   /** GitHub App OAuth client (user identity linking); unset = /link github off. */
@@ -111,7 +101,7 @@ const configSchema = z.object({
     .string()
     .default("true")
     .transform((v) => v === "true" || v === "1"),
-  /** Repair attempts after a failed check (paid tiers; trial is forced to 0). */
+  /** Repair attempts after a failed check (all tiers; 0 disables repair). */
   VERIFY_MAX_REPAIR_ATTEMPTS: z.coerce.number().int().min(0).max(5).default(2),
   /** Share of remaining wall-clock reserved for verify+repair (0..1). */
   VERIFY_RESERVE_FRACTION: z.coerce.number().min(0).max(0.9).default(0.25),

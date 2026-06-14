@@ -5,20 +5,18 @@ import {
   type APIInteractionGuildMember,
 } from "discord.js";
 import { eq } from "drizzle-orm";
-import { getPlan, schema, type Db } from "@anywherecode/db";
-import type { Guild } from "@anywherecode/db";
+import { getPlan, schema, type Db } from "@anywarecode/db";
+import type { Guild } from "@anywarecode/db";
 import type { Config } from "../config.js";
-
-/** /ask is read-only and cheap, so it gets a looser cap than /code. */
-export const ASK_CAP_MULTIPLIER = 4;
 
 const DAY_MS = 86_400_000;
 
 /** Subset of config the guild lifecycle + plan resolution need. */
-export type GuildCaps = Pick<Config, "TRIAL_DAYS" | "PLATFORM_TRIAL_TASK_CAP">;
+export type GuildCaps = Pick<Config, "FREE_TASK_CAP">;
 
 /** Human-facing names per plan row id. */
 export const PLAN_LABELS: Record<string, string> = {
+  free: "Free",
   oss: "OSS Community",
   pro: "Pro",
   studio: "Studio",
@@ -29,31 +27,35 @@ export const PLAN_LABELS: Record<string, string> = {
  * guild" derives it from here, never from subStatus alone.
  */
 export type Tier =
-  | { kind: "trial" }
+  | { kind: "free" }
   | { kind: "oss" }
-  | { kind: "paid"; planId: string }
-  | { kind: "none"; reason: "trial_expired" | "canceled" };
+  | { kind: "paid"; planId: string };
 
+/**
+ * Free is the universal floor: every guild always has at least the Free plan
+ * (BYO-LLM). A canceled/lapsed paid plan falls back to Free, never to nothing.
+ */
 export function resolveTier(guild: Guild): Tier {
-  if (guild.subStatus === "trialing") return { kind: "trial" };
-  if (guild.planId === "oss" && guild.ossStatus === "approved")
+  if (
+    guild.planId === "oss" &&
+    guild.ossStatus === "approved" &&
+    guild.subStatus !== "canceled"
+  )
     return { kind: "oss" };
   // past_due keeps entitlements (Razorpay charge-retry grace); /billing warns.
   if (
     guild.planId &&
+    guild.planId !== "oss" &&
     (guild.subStatus === "active" || guild.subStatus === "past_due")
   )
     return { kind: "paid", planId: guild.planId };
-  return {
-    kind: "none",
-    reason: guild.subStatus === "canceled" ? "canceled" : "trial_expired",
-  };
+  return { kind: "free" };
 }
 
-/** Whether pack tasks may be spent right now (never during trial/none). */
-export function packSpendable(guild: Guild): boolean {
-  const tier = resolveTier(guild);
-  return tier.kind === "oss" || tier.kind === "paid";
+/** Whether pack tasks may be spent right now. Every tier is entitled, so packs
+ * are always spendable; refunds and the cap math both rely on this. */
+export function packSpendable(_guild: Guild): boolean {
+  return true;
 }
 
 /** Whether the guild's plan carries a machine feature flag (e.g. model_select). */
@@ -90,7 +92,7 @@ export interface CapState {
   used: number;
   cap: number;
   needsReset: boolean;
-  /** OSS tier gets unlimited /ask. */
+  /** /ask is unlimited on every plan. */
   unlimited: boolean;
   /** Pack tasks available to spend once the plan cap is exhausted. */
   packRemaining: number;
@@ -102,8 +104,8 @@ export function capState(
   now: Date = new Date(),
 ): CapState {
   const needsReset = now >= guild.capResetAt;
-  const tier = resolveTier(guild);
-  if (tier.kind === "oss" && mode === "ask") {
+  // /ask is read-only and unmetered on every tier.
+  if (mode === "ask") {
     return {
       exceeded: false,
       used: needsReset ? 0 : guild.asksUsedThisMonth,
@@ -113,16 +115,10 @@ export function capState(
       packRemaining: 0,
     };
   }
-  const cap =
-    mode === "code" ? guild.taskCap : guild.taskCap * ASK_CAP_MULTIPLIER;
-  const used = needsReset
-    ? 0
-    : mode === "code"
-      ? guild.tasksUsedThisMonth
-      : guild.asksUsedThisMonth;
-  // Packs fund code tasks only, and only on tiers where they're spendable.
-  const packRemaining =
-    mode === "code" && packSpendable(guild) ? guild.packTasksRemaining : 0;
+  const cap = guild.taskCap;
+  const used = needsReset ? 0 : guild.tasksUsedThisMonth;
+  // Packs fund code tasks once the monthly plan cap is exhausted.
+  const packRemaining = packSpendable(guild) ? guild.packTasksRemaining : 0;
   return {
     exceeded: used >= cap && packRemaining <= 0,
     used,
@@ -137,63 +133,42 @@ export function nextMonthStart(from: Date = new Date()): Date {
   return new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth() + 1, 1));
 }
 
-/**
- * Whether the guild may use the platform LLM key. Only during an active trial;
- * paid tiers and the post-trial free tier must bring their own credential.
- */
-export function allowPlatformKey(guild: Guild): boolean {
-  return guild.subStatus === "trialing";
-}
-
 export interface PlanSummary {
-  /** Display label, e.g. "Pro", "Pro (payment overdue)", "Trial", "No plan". */
+  /** Display label, e.g. "Free", "Pro", "Pro (payment overdue)". */
   tier: string;
   status: Guild["subStatus"];
   codeCap: number;
+  /** Always Infinity — /ask is unlimited on every plan. */
   askCap: number;
-  /** Infinity when unlimited (OSS /ask). */
-  trialDaysLeft: number | null;
   packRemaining: number;
 }
 
 /** Human-facing tier view for `/billing` and the dashboard. */
-export function planSummary(guild: Guild, now: Date = new Date()): PlanSummary {
+export function planSummary(guild: Guild, _now: Date = new Date()): PlanSummary {
   const resolved = resolveTier(guild);
-  const askCap =
-    resolved.kind === "oss"
-      ? Number.POSITIVE_INFINITY
-      : guild.taskCap * ASK_CAP_MULTIPLIER;
-  const trialDaysLeft =
-    resolved.kind === "trial" && guild.trialEndsAt
-      ? Math.max(0, Math.ceil((guild.trialEndsAt.getTime() - now.getTime()) / DAY_MS))
-      : null;
   const tier =
-    resolved.kind === "trial"
-      ? "Trial"
-      : resolved.kind === "oss"
-        ? (PLAN_LABELS["oss"] ?? "OSS Community")
-        : resolved.kind === "paid"
-          ? `${PLAN_LABELS[resolved.planId] ?? resolved.planId}${
-              guild.subStatus === "past_due" ? " (payment overdue)" : ""
-            }`
-          : resolved.reason === "canceled"
-            ? "Canceled"
-            : "No plan";
+    resolved.kind === "oss"
+      ? (PLAN_LABELS["oss"] ?? "OSS Community")
+      : resolved.kind === "paid"
+        ? `${PLAN_LABELS[resolved.planId] ?? resolved.planId}${
+            guild.subStatus === "past_due" ? " (payment overdue)" : ""
+          }`
+        : (PLAN_LABELS["free"] ?? "Free");
   return {
     tier,
     status: guild.subStatus,
     codeCap: guild.taskCap,
-    askCap,
-    trialDaysLeft,
+    askCap: Number.POSITIVE_INFINITY,
     packRemaining: guild.packTasksRemaining,
   };
 }
 
 /**
- * Fetch-or-create the guild row. Handles lazy state transitions on every call:
- * monthly counter reset, and trial→free when the trial window has passed
- * (effective cap lives on `guild.taskCap`; the Razorpay webhook sets it for paid
- * tiers).
+ * Fetch-or-create the guild row. New guilds land on Free immediately (BYO-LLM —
+ * there is no platform-key trial). Handles lazy state transitions on every call:
+ * monthly counter reset, the Discord-rail lazy cancel backstop, and the Free
+ * floor (any guild not on an active paid plan or an approved OSS grant sits on
+ * Free with the Free cap). The Razorpay webhook sets taskCap for paid tiers.
  */
 export async function ensureGuild(
   db: Db,
@@ -209,10 +184,11 @@ export async function ensureGuild(
       .insert(schema.guilds)
       .values({
         id: guildId,
-        taskCap: config.PLATFORM_TRIAL_TASK_CAP,
+        planId: "free",
+        taskCap: config.FREE_TASK_CAP,
+        concurrency: 1,
         capResetAt: nextMonthStart(now),
-        subStatus: "trialing",
-        trialEndsAt: new Date(now.getTime() + config.TRIAL_DAYS * DAY_MS),
+        subStatus: "free",
       })
       .onConflictDoNothing()
       .returning();
@@ -232,22 +208,7 @@ export async function ensureGuild(
     updates.asksUsedThisMonth = 0;
     updates.capResetAt = nextMonthStart(now);
   }
-  // Backfill a trial for rows created before billing existed.
-  if (existing.subStatus === "trialing" && !existing.trialEndsAt) {
-    updates.trialEndsAt = new Date(now.getTime() + config.TRIAL_DAYS * DAY_MS);
-    updates.taskCap = config.PLATFORM_TRIAL_TASK_CAP;
-  } else if (
-    existing.subStatus === "trialing" &&
-    existing.trialEndsAt &&
-    now >= existing.trialEndsAt &&
-    existing.planId === null
-  ) {
-    // Trial elapsed without a plan → no entitlements. The planId guard keeps
-    // this from clobbering an OSS grant or a paid plan that landed mid-trial.
-    updates.subStatus = "free";
-    updates.taskCap = 0;
-    updates.concurrency = 1;
-  } else if (
+  if (
     existing.subSource === "discord" &&
     existing.subStatus === "active" &&
     existing.currentPeriodEnd &&
@@ -255,12 +216,23 @@ export async function ensureGuild(
   ) {
     // Discord never reliably signals subscription end; the entitlement sweep
     // normally refreshes/cancels first — this is the lazy backstop, with 24h
-    // of grace for a renewal event the sweep hasn't replayed yet.
-    updates.subStatus = "canceled";
+    // of grace for a renewal event the sweep hasn't replayed yet. Drops to Free.
+    updates.subStatus = "free";
     updates.subSource = null;
-    updates.planId = null;
-    updates.taskCap = 0;
+    updates.planId = "free";
+    updates.taskCap = config.FREE_TASK_CAP;
     updates.concurrency = 1;
+  }
+
+  // Free floor: normalize any guild that resolves to Free (new, lapsed, or
+  // canceled paid) onto the Free plan row + cap. Skips paid/OSS guilds.
+  const merged = { ...existing, ...updates } as Guild;
+  if (resolveTier(merged).kind === "free") {
+    if (merged.planId !== "free") updates.planId = "free";
+    if (merged.subStatus !== "free") updates.subStatus = "free";
+    if (merged.taskCap !== config.FREE_TASK_CAP)
+      updates.taskCap = config.FREE_TASK_CAP;
+    if (merged.concurrency !== 1) updates.concurrency = 1;
   }
 
   if (Object.keys(updates).length === 0) return existing;

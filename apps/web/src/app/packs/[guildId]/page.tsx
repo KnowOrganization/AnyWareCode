@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getGuild } from "@anywherecode/db";
+import { getGuild } from "@anywarecode/db";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { userInGuild } from "@/lib/guilds";

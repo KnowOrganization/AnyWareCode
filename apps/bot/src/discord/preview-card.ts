@@ -5,7 +5,7 @@ import {
   type Client,
 } from "discord.js";
 import { eq } from "drizzle-orm";
-import { schema, type Db, type Task } from "@anywherecode/db";
+import { schema, type Db, type Task } from "@anywarecode/db";
 import { captureError } from "../observability.js";
 
 /**

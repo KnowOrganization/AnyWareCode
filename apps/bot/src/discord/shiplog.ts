@@ -1,6 +1,6 @@
 import { EmbedBuilder, type Client } from "discord.js";
 import { and, eq, isNull } from "drizzle-orm";
-import { schema, type Db, type Task } from "@anywherecode/db";
+import { schema, type Db, type Task } from "@anywarecode/db";
 import { captureError } from "../observability.js";
 import { truncate } from "./launch.js";
 
@@ -49,7 +49,7 @@ export async function postShipLog(
         ? [{ name: "Preview", value: task.previewUrl, inline: true }]
         : []),
     )
-    .setFooter({ text: "shipped with AnywhereCode" })
+    .setFooter({ text: "shipped with AnyWareCode" })
     .setTimestamp(new Date());
 
   await channel

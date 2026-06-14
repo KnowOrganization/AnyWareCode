@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { eq, lt } from "drizzle-orm";
-import { schema, type Db } from "@anywherecode/db";
+import { schema, type Db } from "@anywarecode/db";
 import { signState, verifyState } from "./state.js";
 
 /**

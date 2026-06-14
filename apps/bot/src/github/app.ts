@@ -33,7 +33,7 @@ export class GitHubService {
    * App JWT. The install callback gets `installation_id` straight from the
    * query string, so without this check a valid state could be paired with an
    * attacker-chosen installation. Returns the installation owner's login on
-   * success (org or user — used for one-trial-per-org), null on any failure.
+   * success (org or user), null on any failure.
    */
   async validateInstallation(
     installationId: number,

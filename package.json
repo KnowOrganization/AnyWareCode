@@ -1,5 +1,5 @@
 {
-  "name": "anywherecode",
+  "name": "anywarecode",
   "private": true,
   "version": "0.1.0",
   "description": "Discord bot that runs a shared coding agent against your GitHub repos and opens PRs",
@@ -9,7 +9,7 @@
     "test": "pnpm -r test",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
-    "dev": "pnpm --filter @anywherecode/bot dev"
+    "dev": "pnpm --filter @anywarecode/bot dev"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",

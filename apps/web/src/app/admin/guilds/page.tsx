@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { listGuildsPaged, searchGuilds, type Guild } from "@anywherecode/db";
+import { listGuildsPaged, searchGuilds, type Guild } from "@anywarecode/db";
 import { db } from "@/lib/db";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { Badge } from "@/components/ui/Badge";
@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/Badge";
 export const dynamic = "force-dynamic";
 
 const PAGE_SIZE = 50;
-const STATUSES = ["trialing", "active", "past_due", "canceled", "free"] as const;
+const STATUSES = ["free", "active", "past_due", "canceled"] as const;
 
 export default async function AdminGuilds({
   searchParams,

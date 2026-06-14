@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { listPaymentsForUser, listPaymentsPaged } from "@anywherecode/db";
+import { listPaymentsForUser, listPaymentsPaged } from "@anywarecode/db";
 import { db } from "@/lib/db";
 import { GlassCard } from "@/components/ui/GlassCard";
 

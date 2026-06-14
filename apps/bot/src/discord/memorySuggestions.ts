@@ -8,7 +8,7 @@ import {
   type ThreadChannel,
 } from "discord.js";
 import { and, eq } from "drizzle-orm";
-import { schema, type Db } from "@anywherecode/db";
+import { schema, type Db } from "@anywarecode/db";
 import type { Config } from "../config.js";
 import { resolveLlmAuth } from "../llm/credentials.js";
 import { suggestMemoryRules } from "../llm/memorySuggest.js";

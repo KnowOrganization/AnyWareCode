@@ -8,67 +8,63 @@ import { plans } from "./schema.js";
  * recurring plan ids. The Razorpay webhook maps an incoming plan id back to one
  * of these rows.
  *
- * Trial is NOT a plan row — it's guilds.subStatus "trialing", maintained by
- * ensureGuild. The OSS row has no Razorpay plan; it's granted via the admin
- * OSS-approval route.
+ * Every plan ships EVERY feature — plans differ only by the monthly /code cap
+ * (and concurrency). So all four rows carry the same machine feature flags; the
+ * only per-plan variation is the cap, concurrency, price, and display blurb.
+ * Free is the default tier (BYO-LLM, no trial). The OSS row has no Razorpay
+ * plan; it's granted via the admin OSS-approval route.
  */
+
+/** Machine feature flags read by the bot's gates. Identical on every plan so
+ * `planHasFeature` is true for any entitled guild. */
+const ALL_FEATURE_FLAGS = [
+  "scheduled_tasks",
+  "repro_gate",
+  "mcp_extensions",
+  "verify_loop",
+  "model_select",
+  "squad_mode",
+];
 
 const PLAN_ROWS = [
   {
-    id: "oss",
-    name: "OSS Community",
-    taskCap: 30,
+    id: "free",
+    name: "Free",
+    taskCap: 15,
     concurrency: 1,
     razorpayPlanIdInr: null as string | null,
     razorpayPlanIdUsd: null as string | null,
-    features: [
-      "Verified public OSS servers",
-      "Unlimited /ask on public repos",
-      "Maintainer-gated runs",
-      "repro_gate",
-      "verify_loop",
-    ],
+    features: ["15 code tasks / mo", "Unlimited /ask", "Everything included", ...ALL_FEATURE_FLAGS],
+    isDefault: true,
+  },
+  {
+    id: "oss",
+    name: "OSS Community",
+    taskCap: 40,
+    concurrency: 1,
+    razorpayPlanIdInr: null as string | null,
+    razorpayPlanIdUsd: null as string | null,
+    features: ["40 code tasks / mo", "Unlimited /ask", "Verified public OSS servers", ...ALL_FEATURE_FLAGS],
     isDefault: false,
   },
   {
     id: "pro",
     name: "Pro",
-    taskCap: 100,
+    taskCap: 150,
     concurrency: 2,
     razorpayPlanIdInr: process.env.RAZORPAY_PLAN_PRO_INR ?? null,
     razorpayPlanIdUsd: process.env.RAZORPAY_PLAN_PRO_USD ?? null,
-    features: [
-      "100 code tasks / mo",
-      "2 concurrent tasks",
-      "Server Memory",
-      "Review agent",
-      "scheduled_tasks",
-      "repro_gate",
-      "mcp_extensions",
-      "verify_loop",
-      "model_select",
-    ],
+    features: ["150 code tasks / mo", "Unlimited /ask", "2 concurrent tasks", "Everything included", ...ALL_FEATURE_FLAGS],
     isDefault: false,
   },
   {
     id: "studio",
     name: "Studio",
-    taskCap: 500,
+    taskCap: 600,
     concurrency: 5,
     razorpayPlanIdInr: process.env.RAZORPAY_PLAN_STUDIO_INR ?? null,
     razorpayPlanIdUsd: process.env.RAZORPAY_PLAN_STUDIO_USD ?? null,
-    features: [
-      "500 code tasks / mo",
-      "5 concurrent tasks",
-      "Standup Mode (voice)",
-      "Spectate",
-      "scheduled_tasks",
-      "repro_gate",
-      "mcp_extensions",
-      "squad_mode",
-      "verify_loop",
-      "model_select",
-    ],
+    features: ["600 code tasks / mo", "Unlimited /ask", "5 concurrent tasks", "Everything included", ...ALL_FEATURE_FLAGS],
     isDefault: false,
   },
 ];
@@ -95,8 +91,8 @@ for (const row of PLAN_ROWS) {
     });
   console.log(`seeded plan ${row.id} (cap ${row.taskCap}, conc ${row.concurrency})`);
 }
-// Pre-launch cleanup: drop retired tiers (free/team) so stale rows can't match
-// a Stripe price or show up in listPlans.
+// Drop any retired tier rows so stale rows can't match a Razorpay plan or show
+// up in listPlans. Current tiers: free, oss, pro, studio.
 const kept = PLAN_ROWS.map((r) => r.id);
 await db.delete(plans).where(notInArray(plans.id, kept));
 await db.$client.end();

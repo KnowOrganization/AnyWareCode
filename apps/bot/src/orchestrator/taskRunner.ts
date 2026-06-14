@@ -11,9 +11,9 @@ import {
   taskBranchName,
   type TaskSpec,
   type TranscriptEntry,
-} from "@anywherecode/shared";
+} from "@anywarecode/shared";
 import type { Config } from "../config.js";
-import { schema, type Db } from "@anywherecode/db";
+import { schema, type Db } from "@anywarecode/db";
 import { planHasFeature } from "../discord/gates.js";
 import { mcpServersForSpec } from "../discord/mcp.js";
 import { maybeSuggestMemory } from "../discord/memorySuggestions.js";
@@ -94,8 +94,8 @@ interface ActiveTask {
   handle: WorkspaceHandle | null;
   /** Set when the task is being stopped, so the run loop reports it correctly. */
   terminalReason: TerminalReason | null;
-  /** "guild" if the LLM credential came from the guild row; "platform" if from config. */
-  llmSource: "guild" | "platform" | null;
+  /** "guild" once the BYO LLM credential resolves; null before resolution. */
+  llmSource: "guild" | null;
   /** Whether this guild's plan permits model selection (gates mid-run !model). */
   modelSelectAllowed: boolean;
   /** False for plan-mode runs (free) so a failure never refunds a non-charge. */
@@ -146,8 +146,7 @@ export class TaskOrchestrator {
     // Runtime control commands steer the live agent instead of adding a turn.
     const model = /^!model\s+(\S+)/.exec(text.trim());
     if (model?.[1]) {
-      // Gate mid-run escalation by the same rules as the /code picker so a
-      // trial/free guild can't switch to an expensive model via the thread.
+      // Gate mid-run escalation by the same rules as the /code picker.
       const requested = model[1];
       const allowed =
         task.modelSelectAllowed &&
@@ -318,28 +317,15 @@ export class TaskOrchestrator {
       "model_select",
     );
 
-    // Verification + self-repair: paid tiers (with the feature) get repair turns;
-    // trial/platform-key runs only report check results (no token-burning repair).
+    // Verification + self-repair runs on every plan (BYO key) — code mode only,
+    // never plan mode. Master switch is VERIFY_ENABLED.
     const verifyOn =
       this.config.VERIFY_ENABLED && params.mode === "code" && !params.planMode;
-    let maxRepairAttempts = 0;
-    if (
-      verifyOn &&
-      task.llmSource !== "platform" &&
-      (await planHasFeature(this.db, planId, "verify_loop"))
-    ) {
-      maxRepairAttempts = this.config.VERIFY_MAX_REPAIR_ATTEMPTS;
-    }
+    const maxRepairAttempts = verifyOn
+      ? this.config.VERIFY_MAX_REPAIR_ATTEMPTS
+      : 0;
 
-    // Platform-key (trial) tasks get the tighter wall clock — bounds the cost
-    // of trial farming alongside the egress allowlist.
-    const timeoutMinutes =
-      task.llmSource === "platform"
-        ? Math.min(
-            this.config.TASK_TIMEOUT_MINUTES,
-            this.config.TRIAL_TASK_TIMEOUT_MINUTES,
-          )
-        : this.config.TASK_TIMEOUT_MINUTES;
+    const timeoutMinutes = this.config.TASK_TIMEOUT_MINUTES;
 
     // Ask mode is read-only by contract — its token can't push (defense in
     // depth for runs that execute untrusted content, e.g. Repro Gate).
@@ -370,7 +356,7 @@ export class TaskOrchestrator {
     const trailers = [
       `Initiated-by: ${initiatedBy}`,
       `Task-thread: ${threadUrl}`,
-      "Sponsored-via: AnywhereCode",
+      "Sponsored-via: AnyWareCode",
     ];
     const spec: TaskSpec = {
       taskId,
@@ -528,14 +514,9 @@ export class TaskOrchestrator {
 
     if (errorMessage) {
       await this.settle(task, "failed");
-      if (isAuthError(errorMessage) && task.llmSource === "guild") {
+      if (isAuthError(errorMessage)) {
         await thread.send(
           "⚠️ LLM credential looks invalid or revoked. Admin: run `/connect llm` to reconnect.",
-        );
-      } else if (isAuthError(errorMessage) && task.llmSource === "platform") {
-        log.error(`[operator] LLM auth error on platform key: ${errorMessage}`);
-        await thread.send(
-          "⚠️ LLM authentication failed. Contact the bot operator.",
         );
       } else {
         await thread.send(
@@ -848,7 +829,7 @@ export function provenanceReceipt(args: {
     `- **Verified:** ${verified.length > 0 ? verified.join(" · ") : "no test evidence recorded"}`,
     `- **Task thread:** ${args.threadUrl}`,
     "",
-    "_Opened by AnywhereCode from a Discord session; humans remain the merge gate._",
+    "_Opened by AnyWareCode from a Discord session; humans remain the merge gate._",
   ].join("\n");
 }
 

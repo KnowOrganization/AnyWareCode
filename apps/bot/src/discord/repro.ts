@@ -1,5 +1,5 @@
 import { EmbedBuilder, type Message } from "discord.js";
-import type { Guild } from "@anywherecode/db";
+import type { Guild } from "@anywarecode/db";
 import { captureError } from "../observability.js";
 import { checkSystemTaskPreconditions, launchTask, truncate } from "./launch.js";
 import type { BotContext } from "./interactions.js";

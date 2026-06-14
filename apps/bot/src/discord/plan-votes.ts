@@ -11,7 +11,7 @@ import {
   type MessageCreateOptions,
 } from "discord.js";
 import { and, eq } from "drizzle-orm";
-import { schema, type Guild, type Proposal } from "@anywherecode/db";
+import { schema, type Guild, type Proposal } from "@anywarecode/db";
 import { resolveLlmAuth } from "../llm/credentials.js";
 import { generatePlan } from "../llm/plan.js";
 import { resolveInstallationForRepo } from "../github/installations.js";

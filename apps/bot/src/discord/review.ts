@@ -4,7 +4,7 @@ import {
   type Client,
 } from "discord.js";
 import { and, eq } from "drizzle-orm";
-import { schema } from "@anywherecode/db";
+import { schema } from "@anywarecode/db";
 import { captureError } from "../observability.js";
 import { detectInjection, quarantine } from "../security/quarantine.js";
 import {
@@ -182,7 +182,7 @@ export async function handleAutoReview(
 ): Promise<void> {
   if (pr.isDraft) return;
   // Never review our own PRs — that's what humans are for.
-  if (pr.headRef.startsWith("anywherecode/")) return;
+  if (pr.headRef.startsWith("anywarecode/")) return;
   const guilds = await guildsForInstallation(ctx.db, installationId);
   for (const guild of guilds) {
     try {

@@ -6,7 +6,7 @@ import {
   getGuild,
   setGuildSuspended,
   writeAudit,
-} from "@anywherecode/db";
+} from "@anywarecode/db";
 import { db } from "@/lib/db";
 import { withAdmin } from "@/lib/adminRoute";
 import { guildAuditView } from "@/lib/adminViews";
@@ -17,10 +17,9 @@ const Body = z
   .object({
     guildId: z.string(),
     subStatus: z
-      .enum(["trialing", "active", "past_due", "canceled", "free"])
+      .enum(["active", "past_due", "canceled", "free"])
       .optional(),
     currentPeriodEnd: z.string().datetime().nullable().optional(),
-    trialEndsAt: z.string().datetime().nullable().optional(),
     /** Add (positive) or remove (negative) pack tasks. */
     packsDelta: z.number().int().optional(),
     resetUsage: z.boolean().optional(),
@@ -31,8 +30,8 @@ const Body = z
   })
   .strict();
 
-/** One audited write covering status / period / trial / packs / usage /
- * suspend. Destructive ops require `confirm:true`. */
+/** One audited write covering status / period / packs / usage / suspend.
+ * Destructive ops require `confirm:true`. */
 export const PATCH = withAdmin(Body, async ({ body, actorId }) => {
   const before = await getGuild(db, body.guildId);
   if (!before) {
@@ -58,15 +57,13 @@ export const PATCH = withAdmin(Body, async ({ body, actorId }) => {
     );
   }
 
-  // Billing fields (status/period/trial/usage) go through the choke point.
+  // Billing fields (status/period/usage) go through the choke point.
   const billing: Parameters<typeof adminSetGuildBilling>[2] = {};
   if (body.subStatus !== undefined) billing.subStatus = body.subStatus;
   if (body.currentPeriodEnd !== undefined)
     billing.currentPeriodEnd = body.currentPeriodEnd
       ? new Date(body.currentPeriodEnd)
       : null;
-  if (body.trialEndsAt !== undefined)
-    billing.trialEndsAt = body.trialEndsAt ? new Date(body.trialEndsAt) : null;
   if (body.resetUsage) billing.resetUsage = true;
   if (Object.keys(billing).length > 0) {
     await adminSetGuildBilling(db, body.guildId, billing);

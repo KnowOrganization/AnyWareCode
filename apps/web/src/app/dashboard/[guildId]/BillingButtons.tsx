@@ -6,8 +6,8 @@ import { Button } from "@/components/ui/Button";
 type Currency = "INR" | "USD";
 
 const PRICE: Record<Currency, { pro: string; studio: string }> = {
-  USD: { pro: "$20/mo", studio: "$50/mo" },
-  INR: { pro: "₹1700/mo", studio: "₹4200/mo" },
+  USD: { pro: "$19/mo", studio: "$49/mo" },
+  INR: { pro: "₹1600/mo", studio: "₹4100/mo" },
 };
 
 export function BillingButtons({

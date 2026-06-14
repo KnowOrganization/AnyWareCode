@@ -64,6 +64,13 @@
       "when": 1781340000000,
       "tag": "0008_razorpay_admin",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1781420000000,
+      "tag": "0009_byo_free_tier",
+      "breakpoints": true
     }
   ]
 }

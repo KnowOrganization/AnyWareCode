@@ -1,7 +1,7 @@
-# AnywhereCode
+# AnyWareCode
 
 A Discord bot that gives your server a shared coding agent. Connect a GitHub
-repo, type `/code <task>` in any channel, and AnywhereCode works in a thread —
+repo, type `/code <task>` in any channel, and AnyWareCode works in a thread —
 streaming progress, taking mid-task instructions from anyone in the thread —
 then opens a pull request.
 
@@ -40,7 +40,7 @@ language. It reads the recent conversation and decides what to do:
 - **Chat** — questions answerable from the conversation get a normal reply.
   Open to everyone; costs one small LLM call on the server's credential
   (rate-limited per guild, doesn't touch the monthly task cap).
-- **Explicit task** — `@AnywhereCode fix the login 500` starts a coding task
+- **Explicit task** — `@AnyWareCode fix the login 500` starts a coding task
   immediately (same thread + PR flow as `/code`). Requires the same role as
   `/code` (`/config role`).
 - **Inferred task** — tag the bot after a discussion without giving a direct
@@ -69,7 +69,7 @@ to the running agent like any other reply.
 ### Step 1 — Create a Discord application
 
 1. Go to <https://discord.com/developers/applications> → **New Application**.
-2. Name it (e.g. "AnywhereCode Dev").
+2. Name it (e.g. "AnyWareCode Dev").
 3. **Bot** tab → **Add Bot** → copy the **Token** → this is `DISCORD_TOKEN`.
 4. Same page → enable **Message Content Intent** under Privileged Gateway Intents.
 5. **OAuth2 → General** → copy **Client ID** → this is `DISCORD_CLIENT_ID`.
@@ -103,7 +103,7 @@ Copy the `https://something.trycloudflare.com` URL — this is your `PUBLIC_URL`
 
 1. Go to <https://github.com/settings/apps/new>.
 2. Fill in:
-   - **GitHub App name**: `AnywhereCode` (or any name; the slug in the URL = `GITHUB_APP_SLUG`)
+   - **GitHub App name**: `AnyWareCode` (or any name; the slug in the URL = `GITHUB_APP_SLUG`)
    - **Homepage URL**: your `PUBLIC_URL` from Step 2
    - **Callback URL**: `{PUBLIC_URL}/github/user-callback` — used by `/link github`
      (provenance identity linking). Also click **Generate a new client secret**:
@@ -165,7 +165,7 @@ DISCORD_TOKEN=           # from Step 1
 DISCORD_CLIENT_ID=       # from Step 1
 
 GITHUB_APP_ID=           # from Step 3
-GITHUB_APP_SLUG=         # from Step 3 (e.g. anywherecode)
+GITHUB_APP_SLUG=         # from Step 3 (e.g. anywarecode)
 GITHUB_APP_PRIVATE_KEY=  # contents of the .pem, with \n for newlines
 
 PUBLIC_URL=              # https://something.trycloudflare.com from Step 2
@@ -196,7 +196,7 @@ corepack enable
 pnpm install
 
 # Build the runner Docker image (from repo root)
-docker build -f apps/runner/Dockerfile -t anywherecode-runner .
+docker build -f apps/runner/Dockerfile -t anywarecode-runner .
 
 # Start the bot (tsx watch — auto-reloads on file changes)
 pnpm dev
@@ -205,11 +205,11 @@ pnpm dev
 The bot will:
 - Run DB migrations against Supabase automatically
 - Register slash commands with Discord
-- Log `Logged in as AnywhereCode#xxxx` when ready
+- Log `Logged in as AnyWareCode#xxxx` when ready
 
 > **Runner changes**: `pnpm dev` only reloads the bot. After editing anything in
 > `apps/runner/` or `packages/shared/`, rebuild the runner image:
-> `docker build -f apps/runner/Dockerfile -t anywherecode-runner .`
+> `docker build -f apps/runner/Dockerfile -t anywarecode-runner .`
 
 ---
 
@@ -234,8 +234,8 @@ With the bot running in your test server:
 pnpm -r typecheck                            # TypeScript check across all packages
 pnpm -r test                                 # run all tests (vitest)
 pnpm dev                                     # bot with hot reload
-pnpm --filter @anywherecode/bot test gates   # single test file
-pnpm --filter @anywherecode/bot db:generate  # after editing db/schema.ts
+pnpm --filter @anywarecode/bot test gates   # single test file
+pnpm --filter @anywarecode/bot db:generate  # after editing db/schema.ts
 ```
 
 ---
@@ -258,10 +258,10 @@ Bot runs migrations and registers commands automatically on boot.
   --build egress-proxy`) — otherwise the connection dies at the proxy.
 - **Discord Premium Apps** (second billing rail): create the SKUs in the
   [dev portal](https://discord.com/developers/applications) (guild
-  subscription SKUs for Pro/Studio at the same prices as Stripe, one
-  consumable SKU for task packs) and set `DISCORD_SKU_PRO`,
+  subscription SKUs for Pro/Studio at the same prices as Razorpay, one
+  consumable SKU for job packs) and set `DISCORD_SKU_PRO`,
   `DISCORD_SKU_STUDIO`, `DISCORD_SKU_PACK`. Payouts require a US/UK/EU
-  developer entity. Unset = the rail stays inert; Stripe keeps working.
+  developer entity. Unset = the rail stays inert; Razorpay keeps working.
 
 ---
 

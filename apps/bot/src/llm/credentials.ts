@@ -6,7 +6,7 @@ import {
 } from "node:crypto";
 import { eq } from "drizzle-orm";
 import type { Config } from "../config.js";
-import { schema, type Db } from "@anywherecode/db";
+import { schema, type Db } from "@anywarecode/db";
 import { log } from "../observability.js";
 
 function deriveKey(secret: string): Buffer {
@@ -14,6 +14,8 @@ function deriveKey(secret: string): Buffer {
     hkdfSync(
       "sha256",
       Buffer.from(secret, "utf8"),
+      // HKDF salt is frozen at the original value on purpose — changing it would
+      // make every stored credential blob undecryptable. NOT a rename target.
       "anywherecode",
       "credential-encryption-v1",
       32,
@@ -65,7 +67,7 @@ export type LlmAuth =
   | { type: "custom"; token: string; baseUrl: string; model: string };
 
 export type ResolvedLlmAuth =
-  | { auth: LlmAuth; source: "guild" | "platform" }
+  | { auth: LlmAuth; source: "guild" }
   | { auth: null; reason: string };
 
 export async function resolveLlmAuth(
@@ -122,13 +124,7 @@ export async function resolveLlmAuth(
     }
   }
 
-  if (config.ANTHROPIC_API_KEY) {
-    return {
-      auth: { type: "anthropic_api_key", token: config.ANTHROPIC_API_KEY },
-      source: "platform",
-    };
-  }
-
+  // BYO-LLM only: there is no platform key. Every server connects its own.
   return { auth: null, reason: "No LLM connected. Admin: run `/connect llm`." };
 }
 

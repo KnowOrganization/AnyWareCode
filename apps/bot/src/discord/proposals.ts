@@ -8,8 +8,8 @@ import {
   type MessageCreateOptions,
 } from "discord.js";
 import { and, eq, lt } from "drizzle-orm";
-import { schema, type Db } from "@anywherecode/db";
-import type { Proposal } from "@anywherecode/db";
+import { schema, type Db } from "@anywarecode/db";
+import type { Proposal } from "@anywarecode/db";
 import { resolveInstallationForRepo } from "../github/installations.js";
 import { canInvoke, ensureGuild } from "./gates.js";
 import type { BotContext } from "./interactions.js";

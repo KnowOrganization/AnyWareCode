@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { getGuildsByIds } from "@anywherecode/db";
+import { getGuildsByIds } from "@anywarecode/db";
 import { auth, signIn } from "@/auth";
 import { db } from "@/lib/db";
 import { fetchManagedGuilds } from "@/lib/guilds";

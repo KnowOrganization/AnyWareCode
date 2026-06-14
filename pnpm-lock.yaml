@@ -17,10 +17,10 @@ importers:
 
   apps/bot:
     dependencies:
-      '@anywherecode/db':
+      '@anywarecode/db':
         specifier: workspace:*
         version: link:../../packages/db
-      '@anywherecode/shared':
+      '@anywarecode/shared':
         specifier: workspace:*
         version: link:../../packages/shared
       '@discordjs/voice':
@@ -81,7 +81,7 @@ importers:
       '@anthropic-ai/claude-agent-sdk':
         specifier: ^0.1.0
         version: 0.1.77(zod@3.25.76)
-      '@anywherecode/shared':
+      '@anywarecode/shared':
         specifier: workspace:*
         version: link:../../packages/shared
       zod:
@@ -97,7 +97,7 @@ importers:
 
   apps/web:
     dependencies:
-      '@anywherecode/db':
+      '@anywarecode/db':
         specifier: workspace:*
         version: link:../../packages/db
       '@gsap/react':

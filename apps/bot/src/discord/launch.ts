@@ -6,15 +6,13 @@ import {
   type ThreadChannel,
 } from "discord.js";
 import { eq } from "drizzle-orm";
-import type { TranscriptEntry } from "@anywherecode/shared";
-import { schema } from "@anywherecode/db";
-import type { Guild } from "@anywherecode/db";
-import { getOrgTrial } from "@anywherecode/db";
+import type { TranscriptEntry } from "@anywarecode/shared";
+import { schema } from "@anywarecode/db";
+import type { Guild } from "@anywarecode/db";
 import { isClaudeOauthEnabled } from "../flags.js";
 import { createInstallState } from "../github/install-state.js";
 import {
   hasInstallation,
-  listInstallations,
   resolveInstallationForRepo,
 } from "../github/installations.js";
 import { getUserLink, userLinkingEnabled } from "../github/user-link.js";
@@ -22,9 +20,8 @@ import { resolveLlmAuth, type ResolvedLlmAuth } from "../llm/credentials.js";
 import { captureError } from "../observability.js";
 import type { RunOutcome } from "../orchestrator/taskRunner.js";
 import { bumpUsage, type FundedBy } from "../orchestrator/usage.js";
-import { allowPlatformKey, canInvoke, capState, resolveTier } from "./gates.js";
+import { canInvoke, capState, resolveTier } from "./gates.js";
 import type { BotContext } from "./interactions.js";
-import { checkTrialGates } from "./trial-gates.js";
 
 /**
  * Shared task-launch path. All entry points (slash commands, the Iterate
@@ -174,13 +171,13 @@ export async function checkSystemTaskPreconditions(
 }
 
 /**
- * Shared credential gating used by the launch funnel and the mention handler:
- * platform-key trial rules (tier + abuse gates + one-trial-per-org) and the
- * claude_oauth kill switch.
+ * Shared credential gating used by the launch funnel and the mention handler.
+ * BYO-LLM only: every server connects its own credential (no platform key, no
+ * trial). The only runtime gate left is the claude_oauth kill switch.
  */
 export async function assertLlmUsable(
   ctx: BotContext,
-  guild: Guild,
+  _guild: Guild,
   resolved: ResolvedLlmAuth,
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
   if (!resolved.auth) {
@@ -195,25 +192,6 @@ export async function assertLlmUsable(
       reason:
         "Subscription-token connections are currently disabled. An admin should run `/connect llm` and switch to an Anthropic API key.",
     };
-  }
-  if (resolved.source !== "platform") return { ok: true };
-  // The platform key is a trial convenience only; paid + post-trial tiers must BYO.
-  if (!allowPlatformKey(guild)) {
-    return { ok: false, reason: trialEndedMessage(ctx) };
-  }
-  const gates = await checkTrialGates(ctx.client, ctx.db, ctx.config, guild);
-  if (!gates.ok) return gates;
-  // One trial per GitHub org, across EVERY linked installation: any linked
-  // org whose trial belongs to a different guild blocks the platform key.
-  for (const installation of await listInstallations(ctx.db, guild.id)) {
-    if (!installation.accountLogin) continue;
-    const orgTrial = await getOrgTrial(ctx.db, installation.accountLogin);
-    if (orgTrial && orgTrial.guildId !== guild.id) {
-      return {
-        ok: false,
-        reason: `The GitHub org \`${installation.accountLogin}\` already used its free trial in another server. Connect your own LLM key with \`/connect llm\` or pick a plan.`,
-      };
-    }
   }
   return { ok: true };
 }
@@ -348,10 +326,4 @@ export async function launchTask(
 
 export function truncate(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
-}
-
-/** Shown when a guild past its trial tries to ride the platform key. */
-export function trialEndedMessage(ctx: BotContext): string {
-  const plans = ctx.config.WEB_URL ? ` and pick a plan at ${ctx.config.WEB_URL}` : "";
-  return `Your free trial has ended. Connect your own LLM key with \`/connect llm\`${plans} to keep going.`;
 }

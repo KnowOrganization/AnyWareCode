@@ -1,11 +1,11 @@
-import type { TaskSpec } from "@anywherecode/shared";
+import type { TaskSpec } from "@anywarecode/shared";
 
 /** Minimal valid TaskSpec for tests; override only what a case cares about. */
 export function createTaskSpec(overrides: Partial<TaskSpec> = {}): TaskSpec {
   return {
     taskId: "t",
     repo: "o/r",
-    branch: "anywherecode/t",
+    branch: "anywarecode/t",
     baseBranch: "main",
     prompt: "do it",
     mode: "code",

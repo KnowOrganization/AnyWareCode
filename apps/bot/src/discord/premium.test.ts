@@ -7,6 +7,7 @@ const config = {
   DISCORD_SKU_PRO: "sku_pro",
   DISCORD_SKU_STUDIO: "sku_studio",
   DISCORD_SKU_PACK: "sku_pack",
+  FREE_TASK_CAP: 15,
 } as Config;
 
 function entitlement(overrides: Partial<Record<string, unknown>> = {}): Entitlement {
@@ -132,9 +133,11 @@ describe("revokeEntitlement", () => {
 
     const discordFunded = mockDb({ guild: { subSource: "discord" } });
     await revokeEntitlement({ db: discordFunded.db, config }, entitlement());
+    // Drops to the Free floor, not to zero entitlements.
     expect(discordFunded.sets[0]).toMatchObject({
-      subStatus: "canceled",
-      taskCap: 0,
+      subStatus: "free",
+      planId: "free",
+      taskCap: 15,
       concurrency: 1,
     });
   });

@@ -13,7 +13,7 @@ import {
   deleteGuildData,
   migrationsDir,
   schema,
-} from "@anywherecode/db";
+} from "@anywarecode/db";
 import { ensureGuild } from "./discord/gates.js";
 import { approvePlanProposal, canApprovePlan } from "./discord/plan-votes.js";
 import { handleInteraction, type BotContext } from "./discord/interactions.js";

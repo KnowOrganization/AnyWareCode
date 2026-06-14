@@ -1,6 +1,6 @@
 import { createInterface } from "node:readline";
 import type { Readable } from "node:stream";
-import { serializeEvent, type RunnerEvent } from "@anywherecode/shared";
+import { serializeEvent, type RunnerEvent } from "@anywarecode/shared";
 
 const secrets: string[] = [];
 

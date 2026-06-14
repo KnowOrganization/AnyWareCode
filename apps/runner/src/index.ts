@@ -4,7 +4,7 @@ import {
   hostMessageSchema,
   taskSpecSchema,
   type TaskSpec,
-} from "@anywherecode/shared";
+} from "@anywarecode/shared";
 import { ClaudeAgent, type Agent } from "./agent.js";
 import { ClawAgent } from "./claw.js";
 import {

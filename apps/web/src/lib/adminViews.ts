@@ -1,4 +1,4 @@
-import type { Guild } from "@anywherecode/db";
+import type { Guild } from "@anywarecode/db";
 
 /** Billing-only guild snapshot for audit logs + API responses (never leaks
  * credential columns). */
@@ -16,7 +16,6 @@ export function guildAuditView(g: Guild | null) {
     asksUsedThisMonth: g.asksUsedThisMonth,
     suspended: g.suspended,
     currentPeriodEnd: g.currentPeriodEnd,
-    trialEndsAt: g.trialEndsAt,
     updatedAt: g.updatedAt,
   };
 }

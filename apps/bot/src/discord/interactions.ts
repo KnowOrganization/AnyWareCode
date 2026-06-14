@@ -10,7 +10,7 @@ import {
 } from "discord.js";
 import { and, eq, inArray } from "drizzle-orm";
 import type { Config } from "../config.js";
-import { schema, type Db } from "@anywherecode/db";
+import { schema, type Db } from "@anywarecode/db";
 import type { GitHubService } from "../github/app.js";
 import { createInstallState } from "../github/install-state.js";
 import { hasInstallation, listInstallations } from "../github/installations.js";
@@ -22,7 +22,6 @@ import {
   capState,
   ensureGuild,
   planHasFeature,
-  resolveTier,
 } from "./gates.js";
 import {
   handleBillingCommand,
@@ -56,7 +55,7 @@ export interface BotContext {
   config: Config;
   github: GitHubService;
   orchestrator: TaskOrchestrator;
-  /** Discord client; used by gates that need live guild data (trial gates). */
+  /** Discord client; used by gates that need live guild data. */
   client: Client;
 }
 
@@ -99,7 +98,7 @@ async function handleCommand(
 ): Promise<void> {
   if (!interaction.inGuild() || !interaction.guildId) {
     await interaction.reply({
-      content: "AnywhereCode only works inside a server.",
+      content: "AnyWareCode only works inside a server.",
       flags: MessageFlags.Ephemeral,
     });
     return;
@@ -218,16 +217,12 @@ async function startAgentTask(
   const squadN =
     mode === "code" && !planNow ? interaction.options.getInteger("squad") : null;
   if (squadN !== null && squadN !== undefined) {
-    const tier = resolveTier(guild);
-    if (
-      squadN > ctx.config.SQUAD_MAX ||
-      !(await squadAllowed(ctx, guildId, guild.planId, tier.kind))
-    ) {
+    if (squadN > ctx.config.SQUAD_MAX || !(await squadAllowed(ctx, guild.planId))) {
       await interaction.reply({
         content:
           squadN > ctx.config.SQUAD_MAX
             ? `Squads cap at ${ctx.config.SQUAD_MAX} attempts on this bot.`
-            : "Squad Mode needs a plan with the feature (Studio). See `/billing`.",
+            : "Squad Mode isn't available right now. See `/billing`.",
         flags: MessageFlags.Ephemeral,
       });
       return;
@@ -754,14 +749,6 @@ async function handleButton(
 
   // Spectate is open to any thread viewer (read-only) — gated by tier only.
   if (action === "spectate") {
-    const tier = resolveTier(guild);
-    if (tier.kind !== "paid") {
-      await interaction.reply({
-        content: "Spectate mode needs a Pro or Studio plan. See `/billing`.",
-        flags: MessageFlags.Ephemeral,
-      });
-      return;
-    }
     const enabled = ctx.orchestrator.enableSpectate(taskId);
     await interaction.reply({
       content: enabled

@@ -3,8 +3,8 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 
-const BOT_NAME = "AnywhereCode[bot]";
-const BOT_EMAIL = "anywherecode[bot]@users.noreply.github.com";
+const BOT_NAME = "AnyWareCode[bot]";
+const BOT_EMAIL = "anywarecode[bot]@users.noreply.github.com";
 const ASKPASS_PATH = "/usr/local/bin/git-askpass.sh";
 
 export interface GitContext {

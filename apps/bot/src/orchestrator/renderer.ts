@@ -1,4 +1,4 @@
-import type { RunnerEvent } from "@anywherecode/shared";
+import type { RunnerEvent } from "@anywarecode/shared";
 
 const MAX_LINES = 14;
 const SPECTATE_MAX_LINES = 30;

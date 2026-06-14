@@ -6,7 +6,7 @@ import {
   getPlan,
   recordTaskPackPurchase,
   schema,
-} from "@anywherecode/db";
+} from "@anywarecode/db";
 import type { Config } from "../config.js";
 import { captureError, log } from "../observability.js";
 import type { BotContext } from "./interactions.js";
@@ -163,11 +163,12 @@ export async function revokeEntitlement(
   // Source guard: never cancel another rail's (Razorpay/admin) plan off a
   // Discord event.
   if (guild?.subSource !== "discord") return;
+  // Drops to the Free floor (BYO-LLM) — never to zero entitlements.
   await applyGuildSubscription(ctx.db, entitlement.guildId, {
-    subStatus: "canceled",
+    subStatus: "free",
     subSource: null,
-    planId: null,
-    taskCap: 0,
+    planId: "free",
+    taskCap: ctx.config.FREE_TASK_CAP,
     concurrency: 1,
   });
   log.info({ guildId: entitlement.guildId }, "discord subscription revoked");
@@ -209,10 +210,10 @@ export async function sweepEntitlements(
     if (guild.subStatus !== "active" || activeSubGuilds.has(guild.id)) continue;
     if (guild.currentPeriodEnd && guild.currentPeriodEnd.getTime() < Date.now()) {
       await applyGuildSubscription(ctx.db, guild.id, {
-        subStatus: "canceled",
+        subStatus: "free",
         subSource: null,
-        planId: null,
-        taskCap: 0,
+        planId: "free",
+        taskCap: ctx.config.FREE_TASK_CAP,
         concurrency: 1,
       });
       log.info({ guildId: guild.id }, "discord subscription lapsed (sweep)");

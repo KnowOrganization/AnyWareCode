@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import type { RunnerEvent, TaskSpec } from "@anywherecode/shared";
+import type { RunnerEvent, TaskSpec } from "@anywarecode/shared";
 import { buildSystemAppend, type Agent } from "./agent.js";
 import { AsyncQueue, redactSecrets } from "./io.js";
 

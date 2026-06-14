@@ -20,7 +20,7 @@ describe("runner event protocol", () => {
     { type: "plan_proposed", text: "1. patch auth\n2. add test" },
     { type: "model_changed", model: "claude-opus-4-8" },
     { type: "assistant_text", text: "Done, opening a PR." },
-    { type: "pushed", branch: "anywherecode/abc123" },
+    { type: "pushed", branch: "anywarecode/abc123" },
     {
       type: "diff_summary",
       files: [{ path: "src/a.ts", additions: 12, deletions: 3 }],
@@ -99,7 +99,7 @@ describe("task spec", () => {
   const base = {
     taskId: "abc",
     repo: "owner/repo",
-    branch: "anywherecode/abc",
+    branch: "anywarecode/abc",
     baseBranch: "main",
     prompt: "do things",
     mode: "code" as const,
@@ -184,7 +184,7 @@ describe("task spec", () => {
   });
 
   it("namespaces task branches", () => {
-    expect(taskBranchName("abc123")).toBe("anywherecode/abc123");
+    expect(taskBranchName("abc123")).toBe("anywarecode/abc123");
   });
 });
 

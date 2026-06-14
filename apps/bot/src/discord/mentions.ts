@@ -1,7 +1,7 @@
 import type { GuildMember, Message, ThreadChannel } from "discord.js";
 import { desc, eq } from "drizzle-orm";
-import { schema } from "@anywherecode/db";
-import type { Task } from "@anywherecode/db";
+import { schema } from "@anywarecode/db";
+import type { Task } from "@anywarecode/db";
 import {
   classifyIntent,
   type ChatContext,
@@ -125,8 +125,7 @@ export async function handleMention(
     );
     return;
   }
-  // Same credential gating as task launches: trial rules (platform key, abuse
-  // gates, org dedup) and the claude_oauth kill switch.
+  // Same credential gating as task launches (BYO-LLM + claude_oauth kill switch).
   const usable = await assertLlmUsable(ctx, guild, llm);
   if (!usable.ok) {
     await reply(message, usable.reason);

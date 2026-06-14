@@ -4,8 +4,8 @@ import {
   type ChatInputCommandInteraction,
 } from "discord.js";
 import { and, eq } from "drizzle-orm";
-import { getPlan, schema, type Guild, type Schedule } from "@anywherecode/db";
-import { canInvoke, ensureGuild, resolveTier } from "./gates.js";
+import { getPlan, schema, type Guild, type Schedule } from "@anywarecode/db";
+import { canInvoke, ensureGuild } from "./gates.js";
 import type { BotContext } from "./interactions.js";
 import { truncate } from "./launch.js";
 
@@ -37,20 +37,16 @@ export function computeNextRun(
   return next;
 }
 
-/** Per-guild schedule allowance: plan feature → config cap, trial → 1, else 0. */
+/** Per-guild schedule allowance: any plan carrying the scheduled_tasks feature
+ * gets the config cap. Every current plan (Free included) does. */
 export async function scheduleAllowance(
   ctx: Pick<BotContext, "db" | "config">,
   guild: Guild,
 ): Promise<number> {
-  const tier = resolveTier(guild);
-  if (tier.kind === "trial") return 1;
-  if (tier.kind === "paid" || tier.kind === "oss") {
-    const plan = await getPlan(ctx.db, tier.kind === "oss" ? "oss" : tier.planId);
-    if (plan?.features.includes("scheduled_tasks")) {
-      return ctx.config.SCHEDULE_MAX_PER_GUILD;
-    }
-  }
-  return 0;
+  const plan = guild.planId ? await getPlan(ctx.db, guild.planId) : null;
+  return plan?.features.includes("scheduled_tasks")
+    ? ctx.config.SCHEDULE_MAX_PER_GUILD
+    : 0;
 }
 
 export async function handleScheduleCommand(

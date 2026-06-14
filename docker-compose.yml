@@ -13,7 +13,7 @@ services:
     build:
       context: .
       dockerfile: apps/runner/Dockerfile
-    image: anywherecode-runner
+    image: anywarecode-runner
     entrypoint: ["true"]
 
   bot:
@@ -22,7 +22,7 @@ services:
       dockerfile: apps/bot/Dockerfile
     env_file: .env
     environment:
-      RUNNER_NETWORK: anywherecode-egress
+      RUNNER_NETWORK: anywarecode-egress
       RUNNER_HTTPS_PROXY: http://egress-proxy:8888
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
@@ -36,5 +36,5 @@ services:
 networks:
   # Task containers join only this network (internal: no direct internet).
   runner-egress:
-    name: anywherecode-egress
+    name: anywarecode-egress
     internal: true

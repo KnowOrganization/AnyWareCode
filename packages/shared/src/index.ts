@@ -185,5 +185,5 @@ export function serializeEvent(
 
 /** Branch namespace the runner is allowed to push to. */
 export function taskBranchName(taskId: string): string {
-  return `anywherecode/${taskId}`;
+  return `anywarecode/${taskId}`;
 }

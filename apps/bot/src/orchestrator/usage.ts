@@ -1,5 +1,5 @@
 import { eq, sql } from "drizzle-orm";
-import { schema, type Db } from "@anywherecode/db";
+import { schema, type Db } from "@anywarecode/db";
 
 export type FundedBy = "plan" | "pack";
 

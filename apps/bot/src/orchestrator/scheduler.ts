@@ -4,7 +4,7 @@ import {
   ButtonStyle,
 } from "discord.js";
 import { and, eq, lte } from "drizzle-orm";
-import { schema } from "@anywherecode/db";
+import { schema } from "@anywarecode/db";
 import { computeNextRun } from "../discord/schedule.js";
 import type { BotContext } from "../discord/interactions.js";
 import { createProposal, setProposalMessageId } from "../discord/proposals.js";

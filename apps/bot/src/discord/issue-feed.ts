@@ -4,11 +4,10 @@ import {
   ButtonStyle,
 } from "discord.js";
 import { and, eq } from "drizzle-orm";
-import { getPlan, schema, type RepoSettings } from "@anywherecode/db";
+import { getPlan, schema, type RepoSettings } from "@anywarecode/db";
 import { captureError, log } from "../observability.js";
 import { guildsForInstallation, type WebhookDeps } from "../github/webhooks.js";
 import { quarantine } from "../security/quarantine.js";
-import { resolveTier } from "./gates.js";
 import { createProposal, setProposalMessageId } from "./proposals.js";
 import { launchRepro } from "./repro.js";
 import { truncate } from "./launch.js";
@@ -191,10 +190,7 @@ export async function handleIssueEvent(
         // repro thread) and only inside the dedup guard (a `labeled` refire
         // never spawns a second container).
         if (settings.reproGate) {
-          const tier = resolveTier(guild);
-          const planId =
-            tier.kind === "oss" ? "oss" : tier.kind === "paid" ? tier.planId : null;
-          const plan = planId ? await getPlan(deps.db, planId) : null;
+          const plan = guild.planId ? await getPlan(deps.db, guild.planId) : null;
           if (plan?.features.includes("repro_gate")) {
             void launchRepro(deps, {
               guild,

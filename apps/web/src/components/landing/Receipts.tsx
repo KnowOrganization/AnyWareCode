@@ -22,10 +22,10 @@ export function Receipts() {
               Per server, <span className="text-outline">not per seat</span>
             </>
           }
-          blurb="One subscription, the whole server — no per-seat math. Fourteen days on our key; your credential after that."
+          blurb="One subscription, the whole server — no per-seat math. Every plan ships every feature; the only meter is monthly /code. You bring your own AI — we never bill for it."
         />
 
-        <Reveal stagger className="mt-14 grid items-start gap-8 lg:grid-cols-3 lg:gap-6">
+        <Reveal stagger className="mt-14 grid items-start gap-8 sm:grid-cols-2 lg:grid-cols-4 lg:gap-5">
           {site.tiers.map((t) => (
             <div key={t.id} className="relative">
               <div

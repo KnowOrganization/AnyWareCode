@@ -7,8 +7,8 @@ describe("renderEventLine", () => {
       renderEventLine({ type: "edit_file", file: "src/a.ts" }),
     ).toBe("✏️ Editing src/a.ts");
     expect(
-      renderEventLine({ type: "pushed", branch: "anywherecode/x" }),
-    ).toBe("🔀 Pushed `anywherecode/x`");
+      renderEventLine({ type: "pushed", branch: "anywarecode/x" }),
+    ).toBe("🔀 Pushed `anywarecode/x`");
   });
 
   it("excludes assistant text, done, and plan proposals from the progress stream", () => {

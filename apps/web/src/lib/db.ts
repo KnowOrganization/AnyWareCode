@@ -1,4 +1,4 @@
-import { createDb } from "@anywherecode/db";
+import { createDb } from "@anywarecode/db";
 
 // Reuse a single pool across hot reloads / serverless invocations.
 const globalForDb = globalThis as unknown as {

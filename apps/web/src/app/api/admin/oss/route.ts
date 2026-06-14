@@ -6,7 +6,7 @@ import {
   listGuildInstallations,
   listPendingOssApplications,
   writeAudit,
-} from "@anywherecode/db";
+} from "@anywarecode/db";
 import { AdminForbidden, requireAdmin } from "@/lib/admin";
 import { withAdmin } from "@/lib/adminRoute";
 import { db } from "@/lib/db";

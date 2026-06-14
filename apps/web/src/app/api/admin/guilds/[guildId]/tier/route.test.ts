@@ -11,7 +11,7 @@ const getGuild = vi.fn();
 const getPlan = vi.fn();
 const adminSetGuildBilling = vi.fn();
 const writeAudit = vi.fn();
-vi.mock("@anywherecode/db", () => ({
+vi.mock("@anywarecode/db", () => ({
   getGuild: (...a: unknown[]) => getGuild(...a),
   getPlan: (...a: unknown[]) => getPlan(...a),
   adminSetGuildBilling: (...a: unknown[]) => adminSetGuildBilling(...a),
@@ -33,8 +33,8 @@ beforeEach(() => {
   getGuild.mockResolvedValue({
     id: "g1",
     updatedAt: new Date("2024-01-01T00:00:00.000Z"),
-    planId: null,
-    subStatus: "trialing",
+    planId: "free",
+    subStatus: "free",
   });
 });
 

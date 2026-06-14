@@ -4,9 +4,10 @@ import {
   applyGuildSubscription,
   findGuildByRazorpayCustomer,
   findPlanByRazorpayPlanId,
+  getPlan,
   recordTaskPackPurchase,
   schema,
-} from "@anywherecode/db";
+} from "@anywarecode/db";
 import { db } from "@/lib/db";
 import { PACK_TASKS, verifyWebhookSignature } from "@/lib/razorpay";
 
@@ -78,16 +79,18 @@ export async function POST(req: Request) {
     case "subscription.completed": {
       const guildId = await guildIdFor(event);
       if (guildId) {
+        // Drop to the Free floor (BYO-LLM), not to zero entitlements.
+        const free = await getPlan(db, "free");
         await applyGuildSubscription(
           db,
           guildId,
           {
-            subStatus: "canceled",
+            subStatus: "free",
             subSource: null,
             razorpaySubscriptionId: null,
-            planId: null,
-            taskCap: 0,
-            concurrency: 1,
+            planId: "free",
+            taskCap: free?.taskCap ?? 15,
+            concurrency: free?.concurrency ?? 1,
           },
           { onlyIfSource: ["razorpay", null] },
         );

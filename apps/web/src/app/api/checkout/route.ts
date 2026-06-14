@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getGuild } from "@anywherecode/db";
+import { getGuild } from "@anywarecode/db";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { userManagesGuild } from "@/lib/guilds";

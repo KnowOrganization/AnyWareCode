@@ -15,7 +15,7 @@ const rows = [
   ["APPROVED", "plan v2 · 14:02 UTC"],
   ["STEERED BY", "@theo, @lin (thread)"],
   ["CHECKS", "typecheck ✓ · tests 42/42 ✓"],
-  ["BRANCH", "anywherecode/a1f3"],
+  ["BRANCH", "anywarecode/a1f3"],
 ] as const;
 
 /**

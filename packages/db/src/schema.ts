@@ -15,9 +15,9 @@ import {
 /** Subscription tiers. Seeded rows; razorpayPlanId* link a tier to Razorpay
  * (one plan id per currency). */
 export const plans = pgTable("plans", {
-  id: text("id").primaryKey(), // "oss" | "pro" | "studio" | ...
+  id: text("id").primaryKey(), // "free" | "oss" | "pro" | "studio"
   name: text("name").notNull(),
-  /** Monthly /code cap (/ask cap = this × ASK_CAP_MULTIPLIER). */
+  /** Monthly /code cap. /ask is unlimited on every plan. */
   taskCap: integer("task_cap").notNull(),
   /** Concurrent tasks per guild; mirrored onto guilds.concurrency. */
   concurrency: integer("concurrency").notNull().default(1),
@@ -48,7 +48,7 @@ export const guilds = pgTable("guilds", {
   id: text("id").primaryKey(), // Discord guild snowflake
   /** Role allowed to invoke /code; null = server admins only. */
   allowedRoleId: text("allowed_role_id"),
-  /** Effective monthly /code cap. Maintained by ensureGuild (trial/free) and
+  /** Effective monthly /code cap. Maintained by ensureGuild (Free floor) and
    * the Razorpay webhook / admin panel (paid plan). capState reads this directly. */
   taskCap: integer("task_cap").notNull().default(0),
   /** Effective concurrent-task limit; mirror of plans.concurrency, same
@@ -66,7 +66,7 @@ export const guilds = pgTable("guilds", {
   planId: text("plan_id"),
   razorpayCustomerId: text("razorpay_customer_id"),
   razorpaySubscriptionId: text("razorpay_subscription_id"),
-  subStatus: subscriptionStatus("sub_status").notNull().default("trialing"),
+  subStatus: subscriptionStatus("sub_status").notNull().default("free"),
   /** Which billing rail owns the subscription; cancel paths guard on it so a
    * stale event from one rail can't wipe another rail's plan. "admin" = a
    * manual operator override that no webhook rail may clobber. */
@@ -75,7 +75,6 @@ export const guilds = pgTable("guilds", {
   requireLinkedSponsor: boolean("require_linked_sponsor")
     .notNull()
     .default(false),
-  trialEndsAt: timestamp("trial_ends_at", { withTimezone: true }),
   currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }),
   /** OSS Community tier application state. */
   ossStatus: ossStatus("oss_status").notNull().default("none"),
@@ -83,8 +82,6 @@ export const guilds = pgTable("guilds", {
   ossReviewedAt: timestamp("oss_reviewed_at", { withTimezone: true }),
   /** Per-server hard kill switch (abuse response). */
   suspended: boolean("suspended").notNull().default(false),
-  /** Trial abuse gates (server age + member count) passed; cached forever. */
-  trialGatesPassedAt: timestamp("trial_gates_passed_at", { withTimezone: true }),
   /** Ship Log channel; null = off. */
   shiplogChannelId: text("shiplog_channel_id"),
   /** Plan-vote approval mode for code tasks. */
@@ -95,7 +92,7 @@ export const guilds = pgTable("guilds", {
     .default("instant"),
   /** Role that may approve plan votes (role_gated mode). */
   planVoteRoleId: text("plan_vote_role_id"),
-  /** BYO-LLM: guild-scoped credential. All nullable; absent = fall back to platform key. */
+  /** BYO-LLM: guild-scoped credential. All nullable; absent = no LLM connected. */
   llmProviderType: text("llm_provider_type", {
     enum: ["claude_oauth", "anthropic_api_key", "custom"],
   }),
@@ -122,7 +119,7 @@ export const guildInstallations = pgTable(
   {
     guildId: text("guild_id").notNull(),
     installationId: bigint("installation_id", { mode: "number" }).notNull(),
-    /** Installation owner login (org or user); one-trial-per-org enforcement. */
+    /** Installation owner login (org or user). */
     accountLogin: text("account_login").notNull(),
     linkedAt: timestamp("linked_at", { withTimezone: true })
       .notNull()
@@ -260,17 +257,6 @@ export const taskPackPurchases = pgTable("task_pack_purchases", {
   amountCents: integer("amount_cents").notNull(),
   razorpayPaymentId: text("razorpay_payment_id").notNull().unique(),
   announcedAt: timestamp("announced_at", { withTimezone: true }),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-});
-
-/** One platform-key trial per GitHub org/user. Claimed at install-link time,
- * enforced when a platform-key task launches. */
-export const githubOrgTrials = pgTable("github_org_trials", {
-  /** Lowercased installation account login. */
-  orgLogin: text("org_login").primaryKey(),
-  guildId: text("guild_id").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

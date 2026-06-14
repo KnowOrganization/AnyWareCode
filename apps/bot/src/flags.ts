@@ -1,4 +1,4 @@
-import { getSetting, type Db } from "@anywherecode/db";
+import { getSetting, type Db } from "@anywarecode/db";
 import { captureError } from "./observability.js";
 
 /**

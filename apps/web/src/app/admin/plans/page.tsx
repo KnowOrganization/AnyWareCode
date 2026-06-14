@@ -1,4 +1,4 @@
-import { listPlans } from "@anywherecode/db";
+import { listPlans } from "@anywarecode/db";
 import { db } from "@/lib/db";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { PlanEditor } from "./PlanEditor";

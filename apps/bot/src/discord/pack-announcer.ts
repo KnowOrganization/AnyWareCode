@@ -3,7 +3,7 @@ import {
   listUnannouncedPackPurchases,
   markPackPurchaseAnnounced,
   type Db,
-} from "@anywherecode/db";
+} from "@anywarecode/db";
 import { captureError } from "../observability.js";
 import { findAnnounceChannel } from "./welcome.js";
 

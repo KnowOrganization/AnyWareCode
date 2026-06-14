@@ -7,7 +7,7 @@ import {
   type HostMessage,
   type RunnerEvent,
   type TaskSpec,
-} from "@anywherecode/shared";
+} from "@anywarecode/shared";
 import type { Config } from "../config.js";
 
 export interface WorkspaceHandle {
@@ -40,7 +40,7 @@ export class DockerWorkspace implements Workspace {
     const container = await this.docker.createContainer({
       Image: this.config.RUNNER_IMAGE,
       Env: Object.entries(env).map(([k, v]) => `${k}=${v}`),
-      Labels: { "anywherecode.task": spec.taskId },
+      Labels: { "anywarecode.task": spec.taskId },
       OpenStdin: true,
       AttachStdin: true,
       AttachStdout: true,

@@ -37,15 +37,15 @@ export const PLAN_IDS: Record<Tier, Record<Currency, string>> = {
 
 /** One-time task-pack amounts in the smallest unit (paise / cents). */
 export const PACK_AMOUNTS: Record<Currency, number> = {
-  INR: Number(process.env.RAZORPAY_PACK_AMOUNT_INR ?? "85000"), // ₹850
-  USD: Number(process.env.RAZORPAY_PACK_AMOUNT_USD ?? "1000"), //  $10
+  INR: Number(process.env.RAZORPAY_PACK_AMOUNT_INR ?? "70000"), // ₹700
+  USD: Number(process.env.RAZORPAY_PACK_AMOUNT_USD ?? "800"), //  $8
 };
 
 /** Monthly subscription price per tier+currency (smallest unit) — for the
  * admin MRR estimate + display. Mirrors the Razorpay plan amounts. */
 export const PLAN_PRICE: Record<Tier, Record<Currency, number>> = {
-  pro: { INR: 170000, USD: 2000 }, // ₹1700 / $20
-  studio: { INR: 420000, USD: 5000 }, // ₹4200 / $50
+  pro: { INR: 160000, USD: 1900 }, // ₹1600 / $19
+  studio: { INR: 410000, USD: 4900 }, // ₹4100 / $49
 };
 
 export const PACK_TASKS = 50;

@@ -17,7 +17,7 @@ export function welcomeMessage(installUrl: string): {
     embeds: [
       new EmbedBuilder()
         .setColor(0x5865f2)
-        .setTitle("👋 AnywhereCode is here")
+        .setTitle("👋 AnyWareCode is here")
         .setDescription(
           [
             "I run coding tasks against your GitHub repos, right from Discord.",

@@ -8,7 +8,7 @@ import {
   type Message,
 } from "discord.js";
 import { and, eq, inArray, lt } from "drizzle-orm";
-import { getPlan, schema, type Squad, type Task } from "@anywherecode/db";
+import { getPlan, schema, type Squad, type Task } from "@anywarecode/db";
 import { captureError, log } from "../observability.js";
 import { claimUnits } from "../orchestrator/usage.js";
 import { canInvoke, ensureGuild, resolveTier } from "./gates.js";
@@ -30,13 +30,9 @@ const REGIONALS = ["🇦", "🇧", "🇨", "🇩", "🇪"] as const;
 
 export async function squadAllowed(
   ctx: Pick<BotContext, "db">,
-  guildId: string,
   guildPlanId: string | null,
-  tierKind: string,
 ): Promise<boolean> {
-  const planId =
-    tierKind === "oss" ? "oss" : tierKind === "paid" ? guildPlanId : null;
-  const plan = planId ? await getPlan(ctx.db, planId) : null;
+  const plan = guildPlanId ? await getPlan(ctx.db, guildPlanId) : null;
   return Boolean(plan?.features.includes("squad_mode"));
 }
 

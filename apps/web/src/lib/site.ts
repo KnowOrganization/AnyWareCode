@@ -54,7 +54,7 @@ export const leadEntries: LeadEntry[] = [
   {
     verb: "Answer",
     line: "/ask — repo-aware, read-only",
-    body: "Questions grounded in the connected repo, answered in the channel. A looser cap than /code, because it never writes a thing.",
+    body: "Questions grounded in the connected repo, answered in the channel. Unlimited on every plan, because it never writes a thing.",
   },
   {
     verb: "Steer",
@@ -167,7 +167,7 @@ export const pipeline: PipelineStage[] = [
     n: "04",
     title: "Ship",
     body: "A branch is pushed, a pull request opens carrying its provenance receipt, and the container is destroyed. A human merges — or hits Iterate.",
-    chip: "✓ PR #128 → anywherecode/a1f3 · container removed",
+    chip: "✓ PR #128 → anywarecode/a1f3 · container removed",
   },
 ];
 
@@ -195,7 +195,7 @@ export const securityPoints: SecurityPoint[] = [
   },
   {
     title: "Never pushes to main",
-    body: "All git lands on anywherecode/<taskId>. A human merges, or nothing does.",
+    body: "All git lands on anywarecode/<taskId>. A human merges, or nothing does.",
   },
   {
     title: "You control access",
@@ -204,7 +204,7 @@ export const securityPoints: SecurityPoint[] = [
 ];
 
 export interface Tier {
-  id: "oss" | "pro" | "studio";
+  id: "free" | "oss" | "pro" | "studio";
   name: string;
   price: string;
   period: string;
@@ -216,18 +216,20 @@ export interface Tier {
   featured?: boolean;
 }
 
+// Every plan ships every feature — the only meter is monthly /code count.
+// /ask is unlimited on all of them. You bring your own AI; we never bill for it.
 export const tiers: Tier[] = [
   {
-    id: "oss",
-    name: "OSS Community",
+    id: "free",
+    name: "Free",
     price: "$0",
     period: "/mo",
-    tagline: "For verified public open-source servers. Your runs are the demo.",
+    tagline: "A real plan, not a demo. Connect your own AI and go.",
     features: [
-      "30 pooled code tasks / mo",
-      "Unlimited questions on public repos",
-      "Repro Gate — slop reports filtered free",
-      "Apply with /oss apply",
+      "15 code tasks / mo",
+      "Unlimited /ask",
+      "Every feature included",
+      "Bring your own AI",
     ],
     cta: "Add to Discord",
     external: true,
@@ -235,14 +237,14 @@ export const tiers: Tier[] = [
   {
     id: "pro",
     name: "Pro",
-    price: "$20 / ₹1700",
+    price: "$19 / ₹1600",
     period: "/mo",
     tagline: "One shared engineer for the whole server — no per-seat math.",
     features: [
-      "100 code tasks / mo · 2 concurrent",
-      "400 questions / mo + Repro Gate",
-      "Server Memory + Review agent",
-      "Scheduled tasks + MCP extensions",
+      "150 code tasks / mo · 2 concurrent",
+      "Unlimited /ask",
+      "Every feature included",
+      "Job packs to top up anytime",
     ],
     cta: "Get Pro",
     external: false,
@@ -251,24 +253,39 @@ export const tiers: Tier[] = [
   {
     id: "studio",
     name: "Studio",
-    price: "$50 / ₹4200",
+    price: "$49 / ₹4100",
     period: "/mo",
     tagline: "For studios living in voice channels and shipping daily.",
     features: [
-      "500 code tasks / mo · 5 concurrent",
-      "2,000 questions / mo",
-      "Voice → PR Standup Mode",
-      "Squad Mode + Spectate + previews",
+      "600 code tasks / mo · 5 concurrent",
+      "Unlimited /ask",
+      "Every feature included",
+      "Voice → PR, Squad, Spectate",
     ],
     cta: "Get Studio",
     external: false,
+  },
+  {
+    id: "oss",
+    name: "OSS Community",
+    price: "$0",
+    period: "/mo",
+    tagline: "For verified public open-source servers. Your runs are the demo.",
+    features: [
+      "40 code tasks / mo",
+      "Unlimited /ask",
+      "Every feature included",
+      "Apply with /oss apply",
+    ],
+    cta: "Add to Discord",
+    external: true,
   },
 ];
 
 /** Community-funded compute — shown under the tier grid. */
 export const taskPack = {
-  name: "Task Pack",
-  price: "$10 / ₹850",
+  name: "Job Pack",
+  price: "$8 / ₹700",
   blurb:
     "50 extra code tasks for the server, buyable by ANY member — Discord-boost style, with public credit. Never expires while subscribed.",
 } as const;
@@ -285,11 +302,11 @@ export const faqs: Faq[] = [
   },
   {
     q: "Whose LLM key is used?",
-    a: "Yours. Every server connects its own credential — an Anthropic API key, a Claude Pro/Max token, or any compatible endpoint — encrypted per server. The 14-day trial runs on ours.",
+    a: "Yours, always. We don't supply AI or bill for it. Every server connects its own credential — an Anthropic API key, a Claude Pro/Max token, or any compatible endpoint — encrypted per server. The Free plan is the trial: connect your key and go.",
   },
   {
     q: "Can it push to my main branch?",
-    a: "Never. All git lands on anywherecode/<taskId> and arrives as a pull request. Nothing merges without a human.",
+    a: "Never. All git lands on anywarecode/<taskId> and arrives as a pull request. Nothing merges without a human.",
   },
   {
     q: "What about prompt injection from repos and issues?",

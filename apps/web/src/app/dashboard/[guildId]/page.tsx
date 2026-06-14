@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { getChannelReposForGuild, getGuild } from "@anywherecode/db";
+import { getChannelReposForGuild, getGuild } from "@anywarecode/db";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { userManagesGuild } from "@/lib/guilds";
@@ -96,13 +96,6 @@ export default async function GuildPage({
                 <p className={`mt-3 font-display text-3xl font-semibold ${tierTone}`}>
                   {view.tier}
                 </p>
-                {view.trialDaysLeft !== null && (
-                  <p className="mt-1 text-sm text-muted">
-                    {view.trialDaysLeft > 0
-                      ? `Trial: ${view.trialDaysLeft} day(s) left.`
-                      : "Trial ended — connect your own LLM key in Discord."}
-                  </p>
-                )}
                 {view.renewsAt && (
                   <p className="mt-1 text-sm text-muted">
                     Renews {view.renewsAt.toDateString()}.
@@ -144,17 +137,13 @@ export default async function GuildPage({
               </div>
               <div>
                 <div className="flex items-baseline justify-between text-sm">
-                  <span className="text-muted">Questions</span>
+                  <span className="text-muted">Questions (/ask)</span>
                   <span className="font-mono">
                     {view.askUsed}
-                    <span className="text-faint">/{view.askCap}</span>
+                    <span className="text-faint">/∞</span>
                   </span>
                 </div>
-                <Meter
-                  used={view.askUsed}
-                  cap={view.askCap}
-                  accent="bg-gradient-to-r from-cyan to-mint"
-                />
+                <p className="mt-2 text-sm text-mint">Unlimited on every plan.</p>
               </div>
             </div>
             <p className="mt-5 text-sm text-muted">

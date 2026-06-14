@@ -12,7 +12,7 @@ import {
   type ModalSubmitInteraction,
 } from "discord.js";
 import { eq } from "drizzle-orm";
-import { schema } from "@anywherecode/db";
+import { schema } from "@anywarecode/db";
 import { isClaudeOauthEnabled } from "../flags.js";
 import { createInstallState } from "../github/install-state.js";
 import {
@@ -20,7 +20,7 @@ import {
   validateLlmAuth,
   type LlmAuth,
 } from "../llm/credentials.js";
-import { removeGuildInstallation } from "@anywherecode/db";
+import { removeGuildInstallation } from "@anywarecode/db";
 import { listInstallations } from "../github/installations.js";
 import { capState, ensureGuild, planSummary } from "./gates.js";
 import type { BotContext } from "./interactions.js";
@@ -273,15 +273,16 @@ export async function handleSetupCommand(
   let llmStatus: string;
   if (guild.llmProviderType && guild.llmCredentialSetAt) {
     llmStatus = `✅ LLM connected (${providerTypeLabel(guild.llmProviderType)}, set ${guild.llmCredentialSetAt.toDateString()})`;
-  } else if (ctx.config.ANTHROPIC_API_KEY) {
-    llmStatus = `✅ LLM using platform key (operator-managed)`;
   } else {
-    llmStatus = `❌ LLM not connected — run \`/connect llm\``;
+    llmStatus = `❌ LLM not connected — run \`/connect llm\` (you bring your own AI)`;
   }
 
   const codeCap = capState(guild, "code");
   const askCap = capState(guild, "ask");
-  const usageStatus = `📊 Usage this month: ${codeCap.used}/${codeCap.cap} code tasks, ${askCap.used}/${askCap.cap} questions`;
+  const askUsage = askCap.unlimited
+    ? `${askCap.used}/∞ questions`
+    : `${askCap.used}/${askCap.cap} questions`;
+  const usageStatus = `📊 Usage this month: ${codeCap.used}/${codeCap.cap} code tasks, ${askUsage}`;
 
   await interaction.reply({
     content: [githubStatus, llmStatus, usageStatus].join("\n"),
@@ -300,13 +301,6 @@ export async function handleBillingCommand(
   const ask = capState(guild, "ask");
 
   const lines = [`💳 **Plan:** ${plan.tier}`];
-  if (plan.trialDaysLeft !== null) {
-    lines.push(
-      plan.trialDaysLeft > 0
-        ? `⏳ Trial: ${plan.trialDaysLeft} day(s) left (running on the platform key).`
-        : `⏳ Trial ended — connect your own key with \`/connect llm\`.`,
-    );
-  }
   if (plan.status === "past_due") {
     lines.push("⚠️ Payment overdue — update your card or the plan lapses.");
   }

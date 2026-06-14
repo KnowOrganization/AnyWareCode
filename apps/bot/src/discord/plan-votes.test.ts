@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { PermissionFlagsBits, type APIInteractionGuildMember } from "discord.js";
-import type { Guild } from "@anywherecode/db";
+import type { Guild } from "@anywarecode/db";
 import { canApprovePlan } from "./plan-votes.js";
 
 function member(roles: string[], permissions = "0"): APIInteractionGuildMember {

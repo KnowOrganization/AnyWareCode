@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getPlan, updatePlan, writeAudit } from "@anywherecode/db";
+import { getPlan, updatePlan, writeAudit } from "@anywarecode/db";
 import { db } from "@/lib/db";
 import { withAdmin } from "@/lib/adminRoute";
 

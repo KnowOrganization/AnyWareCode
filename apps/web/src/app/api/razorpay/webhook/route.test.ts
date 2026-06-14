@@ -10,6 +10,7 @@ const applyGuildSubscription = vi.fn();
 const recordTaskPackPurchase = vi.fn();
 const findPlanByRazorpayPlanId = vi.fn();
 const findGuildByRazorpayCustomer = vi.fn();
+const getPlan = vi.fn();
 let dedupRows: { id: string }[] = [];
 vi.mock("@/lib/db", () => ({
   db: {
@@ -22,12 +23,13 @@ vi.mock("@/lib/db", () => ({
     }),
   },
 }));
-vi.mock("@anywherecode/db", () => ({
+vi.mock("@anywarecode/db", () => ({
   applyGuildSubscription: (...a: unknown[]) => applyGuildSubscription(...a),
   recordTaskPackPurchase: (...a: unknown[]) => recordTaskPackPurchase(...a),
   findPlanByRazorpayPlanId: (...a: unknown[]) => findPlanByRazorpayPlanId(...a),
   findGuildByRazorpayCustomer: (...a: unknown[]) =>
     findGuildByRazorpayCustomer(...a),
+  getPlan: (...a: unknown[]) => getPlan(...a),
   schema: { razorpayWebhookEvents: { eventId: "event_id" } },
 }));
 
@@ -127,7 +129,8 @@ describe("POST /api/razorpay/webhook", () => {
     );
   });
 
-  it("cancels with the admin/discord source guard", async () => {
+  it("drops to the Free floor on cancel with the admin/discord source guard", async () => {
+    getPlan.mockResolvedValue({ id: "free", taskCap: 15, concurrency: 1 });
     const res = await POST(
       req({
         event: "subscription.cancelled",
@@ -140,7 +143,12 @@ describe("POST /api/razorpay/webhook", () => {
     expect(applyGuildSubscription).toHaveBeenCalledWith(
       expect.anything(),
       "g1",
-      expect.objectContaining({ subStatus: "canceled" }),
+      expect.objectContaining({
+        subStatus: "free",
+        planId: "free",
+        taskCap: 15,
+        concurrency: 1,
+      }),
       expect.objectContaining({ onlyIfSource: ["razorpay", null] }),
     );
   });

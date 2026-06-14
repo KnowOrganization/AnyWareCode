@@ -2,7 +2,7 @@ import {
   listGuildInstallations,
   type Db,
   type GuildInstallation,
-} from "@anywherecode/db";
+} from "@anywarecode/db";
 import type { GitHubService } from "./app.js";
 
 /**

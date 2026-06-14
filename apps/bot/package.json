@@ -1,5 +1,5 @@
 {
-  "name": "@anywherecode/bot",
+  "name": "@anywarecode/bot",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -12,8 +12,8 @@
     "register-commands": "dotenv -e ../../.env -- tsx src/discord/register.ts"
   },
   "dependencies": {
-    "@anywherecode/db": "workspace:*",
-    "@anywherecode/shared": "workspace:*",
+    "@anywarecode/db": "workspace:*",
+    "@anywarecode/shared": "workspace:*",
     "@discordjs/voice": "^0.19.2",
     "@sentry/node": "^10.57.0",
     "discord.js": "^14.16.0",
