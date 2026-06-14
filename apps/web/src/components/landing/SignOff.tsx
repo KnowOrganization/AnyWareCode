@@ -52,8 +52,8 @@ export function SignOff() {
                 Add to Discord →
               </Cta>
             </Magnetic>
-            <Cta href={site.DASHBOARD_URL} variant="outline" className="h-14 px-9">
-              Open dashboard
+            <Cta href="#pricing" variant="outline" className="h-14 px-9">
+              See pricing
             </Cta>
           </div>
           <div className="mx-auto mt-14 max-w-sm">

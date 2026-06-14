@@ -23,8 +23,10 @@ export function middleware(req: NextRequest) {
   if (pathname.startsWith("/api/admin")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  // UI: send to the dashboard sign-in.
-  return NextResponse.redirect(new URL("/dashboard", req.url));
+  // UI: send to the Discord OAuth sign-in (operators only; there is no user web).
+  const signIn = new URL("/api/auth/signin", req.url);
+  signIn.searchParams.set("callbackUrl", pathname);
+  return NextResponse.redirect(signIn);
 }
 
 export const config = {

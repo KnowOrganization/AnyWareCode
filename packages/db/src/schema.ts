@@ -46,6 +46,8 @@ export const ossStatus = pgEnum("oss_status", [
 
 export const guilds = pgTable("guilds", {
   id: text("id").primaryKey(), // Discord guild snowflake
+  /** Discord server name, captured best-effort by the bot for the admin panel. */
+  name: text("name"),
   /** Role allowed to invoke /code; null = server admins only. */
   allowedRoleId: text("allowed_role_id"),
   /** Effective monthly /code cap. Maintained by ensureGuild (Free floor) and

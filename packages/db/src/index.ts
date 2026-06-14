@@ -424,6 +424,8 @@ export interface GuildListFilter {
   status?: AdminSubStatus;
   planId?: string;
   suspended?: boolean;
+  /** "recent" = newest first (default); "usage" = highest /code usage first. */
+  sort?: "recent" | "usage";
 }
 
 /** Paginated guild list with optional filters + total count. */
@@ -439,9 +441,13 @@ export async function listGuildsPaged(
       : undefined,
   ].filter(Boolean);
   const where = clauses.length > 0 ? and(...clauses) : undefined;
+  const orderBy =
+    f.sort === "usage"
+      ? desc(schema.guilds.tasksUsedThisMonth)
+      : desc(schema.guilds.createdAt);
   const rows = await db.query.guilds.findMany({
     where,
-    orderBy: desc(schema.guilds.createdAt),
+    orderBy,
     limit: f.limit,
     offset: f.offset,
   });
@@ -452,21 +458,35 @@ export async function listGuildsPaged(
   return { rows, total: c?.n ?? 0 };
 }
 
-/** Search guilds by id prefix or Razorpay ids (guild names aren't stored). */
+/** Search guilds by name (substring), id prefix, or Razorpay ids. */
 export async function searchGuilds(
   db: Db,
   q: string,
   limit = 25,
 ): Promise<schema.Guild[]> {
-  const like = `${q}%`;
+  const prefix = `${q}%`;
+  const contains = `%${q}%`;
   return db.query.guilds.findMany({
     where: or(
-      ilike(schema.guilds.id, like),
-      ilike(schema.guilds.razorpayCustomerId, like),
-      ilike(schema.guilds.razorpaySubscriptionId, like),
+      ilike(schema.guilds.name, contains),
+      ilike(schema.guilds.id, prefix),
+      ilike(schema.guilds.razorpayCustomerId, prefix),
+      ilike(schema.guilds.razorpaySubscriptionId, prefix),
     ),
     limit,
   });
+}
+
+/** Best-effort capture of the Discord server name (admin-panel display/search). */
+export async function setGuildName(
+  db: Db,
+  guildId: string,
+  name: string,
+): Promise<void> {
+  await db
+    .update(schema.guilds)
+    .set({ name })
+    .where(eq(schema.guilds.id, guildId));
 }
 
 /** Edit a plan/tier row. Returns the updated row (null if no such plan). */

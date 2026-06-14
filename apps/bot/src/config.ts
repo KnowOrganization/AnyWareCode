@@ -84,8 +84,12 @@ const configSchema = z.object({
   STANDUP_MAX_MINUTES: z.coerce.number().int().default(30),
   /** Force-flush a single utterance buffer after this many seconds. */
   STANDUP_MAX_UTTERANCE_SECONDS: z.coerce.number().int().default(60),
-  /** Public dashboard URL for upgrade/billing links. */
+  /** Public web base URL for the Razorpay pay-redirects + admin panel. */
   WEB_URL: z.string().default(""),
+  /** Shared secret bridging bot↔web for billing: signs the Job-Pack attribution
+   * token and authenticates the bot's cancel call. Set the SAME value in the web
+   * app. Unset = pack buttons are unattributed + the cancel button is hidden. */
+  BILLING_BRIDGE_SECRET: z.string().min(16).optional(),
   /** Which runner engine to use. "claude" = Claude Agent SDK (default). */
   RUNNER_ENGINE: z.enum(["claude", "claw"]).default("claude"),
   /** Model used when a task doesn't request one (BYO providers use their own). */

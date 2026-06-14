@@ -24,6 +24,7 @@ import {
   planHasFeature,
 } from "./gates.js";
 import {
+  handleBillingButton,
   handleBillingCommand,
   handleConnectCommand,
   handleLlmButton,
@@ -198,7 +199,7 @@ async function startAgentTask(
   if (requestedModel) {
     if (!(await planHasFeature(ctx.db, guild.planId, "model_select"))) {
       await interaction.reply({
-        content: "Choosing a model needs a Pro or Studio plan. See `/billing`.",
+        content: "Model selection isn't enabled for this server's plan.",
         flags: MessageFlags.Ephemeral,
       });
       return;
@@ -222,7 +223,7 @@ async function startAgentTask(
         content:
           squadN > ctx.config.SQUAD_MAX
             ? `Squads cap at ${ctx.config.SQUAD_MAX} attempts on this bot.`
-            : "Squad Mode isn't available right now. See `/billing`.",
+            : "Squad Mode isn't enabled for this server's plan.",
         flags: MessageFlags.Ephemeral,
       });
       return;
@@ -724,6 +725,14 @@ async function handleButton(
     const proposalId = parts[3];
     if ((sub !== "run" && sub !== "dismiss") || !proposalId) return;
     await handleProposalButton(ctx, interaction, sub, proposalId);
+    return;
+  }
+
+  // Billing buttons (Job Pack / Cancel) — no taskId; bridge to the web.
+  if (action === "billing") {
+    const sub = parts[2];
+    if (sub !== "pack" && sub !== "cancel") return;
+    await handleBillingButton(ctx, interaction, sub);
     return;
   }
 

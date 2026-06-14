@@ -125,7 +125,7 @@ export async function handleScheduleCommand(
     await interaction.reply({
       content:
         allowance === 0
-          ? "Scheduled tasks need a plan with the feature (Pro or Studio). See `/billing`."
+          ? "Scheduled tasks aren't enabled for this server's plan."
           : `This server is at its schedule limit (${allowance}). Remove one with \`/schedule remove\`.`,
       flags: MessageFlags.Ephemeral,
     });

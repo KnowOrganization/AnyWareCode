@@ -66,7 +66,7 @@ export function Receipts() {
                 <div className="rule-dash mt-6" />
 
                 <Cta
-                  href={t.external ? site.INSTALL_URL : site.DASHBOARD_URL}
+                  href={site.INSTALL_URL}
                   variant={t.featured ? "solid" : "outline"}
                   className="mt-7 w-full"
                 >
@@ -101,8 +101,8 @@ export function Receipts() {
                 {site.taskPack.blurb}
               </p>
             </div>
-            <Cta href={site.DASHBOARD_URL} variant="outline">
-              Buy a pack
+            <Cta href={site.INSTALL_URL} variant="outline">
+              Buy in Discord
             </Cta>
           </div>
         </Reveal>

@@ -12,6 +12,7 @@ import {
 function guildRow(overrides: Partial<Guild> = {}): Guild {
   return {
     id: "g1",
+    name: null,
     allowedRoleId: null,
     taskCap: 15,
     concurrency: 1,

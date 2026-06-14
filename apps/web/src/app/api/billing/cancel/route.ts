@@ -1,28 +1,36 @@
+import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { getGuild } from "@anywarecode/db";
-import { auth } from "@/auth";
 import { db } from "@/lib/db";
-import { userManagesGuild } from "@/lib/guilds";
 import { getRazorpay, razorpayConfigured } from "@/lib/razorpay";
 
 export const runtime = "nodejs";
 
 /**
- * Razorpay has no hosted billing portal, so cancellation is server-side. The
- * actual billing state flips when the resulting `subscription.cancelled`
- * webhook lands (single write path). A guild manager triggers this.
+ * Cancellation is bot-driven: the Discord `/billing` Cancel button (gated on
+ * ManageGuild) calls this with a shared-secret bearer. There is no user web
+ * surface. The actual billing state flips when the `subscription.cancelled`
+ * webhook lands (single write path).
  */
+function bearerOk(req: Request): boolean {
+  const secret = process.env.BILLING_BRIDGE_SECRET;
+  if (!secret) return false;
+  const header = req.headers.get("authorization") ?? "";
+  const token = header.startsWith("Bearer ") ? header.slice(7) : "";
+  const a = Buffer.from(token);
+  const b = Buffer.from(secret);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
 export async function POST(req: Request) {
-  const session = await auth();
-  if (!session?.accessToken) {
-    return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+  if (!bearerOk(req)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const { guildId } = (await req.json()) as { guildId?: string };
+  const { guildId } = (await req.json().catch(() => ({}))) as {
+    guildId?: string;
+  };
   if (!guildId) {
     return NextResponse.json({ error: "Bad request" }, { status: 400 });
-  }
-  if (!(await userManagesGuild(session.accessToken, guildId))) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   if (!razorpayConfigured()) {
     return NextResponse.json(
@@ -37,7 +45,6 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
-
   // cancel_at_cycle_end keeps access until the paid period ends.
   await getRazorpay().subscriptions.cancel(guild.razorpaySubscriptionId, true);
   return NextResponse.json({ cancelled: true });

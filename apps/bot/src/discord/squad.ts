@@ -56,11 +56,7 @@ export async function launchSquad(
   if (!funded) {
     return {
       ok: false,
-      reason: `A squad of ${args.n} needs ${args.n} task units and this server doesn't have them${
-        ctx.config.WEB_URL
-          ? ` — any member can add a pack at ${ctx.config.WEB_URL}/packs/${args.guildId}`
-          : ""
-      }.`,
+      reason: `A squad of ${args.n} needs ${args.n} task units and this server doesn't have them — run \`/billing\` to add a Job Pack (any member can).`,
     };
   }
 

@@ -10,9 +10,6 @@ export const INSTALL_URL =
   process.env.NEXT_PUBLIC_DISCORD_INSTALL_URL ??
   "https://discord.com/oauth2/authorize";
 
-/** Dashboard route. Sign-in is prompted there (Discord OAuth). */
-export const DASHBOARD_URL = "/dashboard";
-
 export const GITHUB_URL = "https://github.com";
 
 export const nav = [
@@ -247,7 +244,7 @@ export const tiers: Tier[] = [
       "Job packs to top up anytime",
     ],
     cta: "Get Pro",
-    external: false,
+    external: true,
     featured: true,
   },
   {
@@ -263,7 +260,7 @@ export const tiers: Tier[] = [
       "Voice → PR, Squad, Spectate",
     ],
     cta: "Get Studio",
-    external: false,
+    external: true,
   },
   {
     id: "oss",
@@ -333,11 +330,8 @@ export const footerColumns = [
     ],
   },
   {
-    title: "Account",
-    links: [
-      { label: "Dashboard", href: DASHBOARD_URL },
-      { label: "Add to Discord", href: INSTALL_URL },
-    ],
+    title: "Get started",
+    links: [{ label: "Add to Discord", href: INSTALL_URL }],
   },
   {
     title: "Legal",

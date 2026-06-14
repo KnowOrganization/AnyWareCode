@@ -52,7 +52,10 @@ export default async function AdminGuildDetail({
         <Link href="/admin/guilds" className="text-sm text-muted hover:text-fg">
           ← Servers
         </Link>
-        <h1 className="font-mono text-lg">{guild.id}</h1>
+        <div>
+          <h1 className="text-lg font-semibold">{guild.name ?? "—"}</h1>
+          <span className="font-mono text-xs text-muted">{guild.id}</span>
+        </div>
         {guild.suspended && <Badge>suspended</Badge>}
       </div>
 

@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   adminSetGuildBilling,
   getGuild,
+  getPlan,
   writeAudit,
 } from "@anywarecode/db";
 import { db } from "@/lib/db";
@@ -40,11 +41,14 @@ export const POST = withAdmin(Body, async ({ body, actorId }) => {
       );
     }
   }
+  // Drop to the Free floor (BYO-LLM), not to zero — mirrors the Razorpay + Discord
+  // cancel paths so the panel/dashboard never shows a 0/0 dead state.
+  const free = await getPlan(db, "free");
   await adminSetGuildBilling(db, body.guildId, {
-    subStatus: "canceled",
-    planId: null,
-    taskCap: 0,
-    concurrency: 1,
+    subStatus: "free",
+    planId: "free",
+    taskCap: free?.taskCap ?? 15,
+    concurrency: free?.concurrency ?? 1,
     razorpaySubscriptionId: null,
   });
   const after = await getGuild(db, body.guildId);

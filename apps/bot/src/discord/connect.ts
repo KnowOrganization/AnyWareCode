@@ -11,9 +11,11 @@ import {
   type ChatInputCommandInteraction,
   type ModalSubmitInteraction,
 } from "discord.js";
+import { createHmac } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { schema } from "@anywarecode/db";
 import { isClaudeOauthEnabled } from "../flags.js";
+import { log } from "../observability.js";
 import { createInstallState } from "../github/install-state.js";
 import {
   encryptCredential,
@@ -344,23 +346,46 @@ export async function handleBillingCommand(
       new ActionRowBuilder<ButtonBuilder>().addComponents(...premiumButtons),
     );
   }
+  const billingSecret = ctx.config.BILLING_BRIDGE_SECRET;
   if (ctx.config.WEB_URL) {
-    rows.push(
-      new ActionRowBuilder<ButtonBuilder>().addComponents(
+    const payRow = new ActionRowBuilder<ButtonBuilder>();
+    // Upgrade links go to the no-login Razorpay pay-redirect (geo-detects currency).
+    if (!subscribed) {
+      payRow.addComponents(
         new ButtonBuilder()
           .setStyle(ButtonStyle.Link)
-          .setLabel(
-            subscribed && guild.subSource !== "discord"
-              ? "Manage billing"
-              : "Web dashboard",
-          )
-          .setURL(`${ctx.config.WEB_URL}/dashboard/${guildId}`),
+          .setLabel("Upgrade to Pro")
+          .setURL(`${ctx.config.WEB_URL}/pay/${guildId}/sub?plan=pro`),
         new ButtonBuilder()
           .setStyle(ButtonStyle.Link)
-          .setLabel("Buy a task pack 🔋")
-          .setURL(`${ctx.config.WEB_URL}/packs/${guildId}`),
-      ),
+          .setLabel("Upgrade to Studio")
+          .setURL(`${ctx.config.WEB_URL}/pay/${guildId}/sub?plan=studio`),
+      );
+    }
+    // Job Pack: bot-handled when we can sign attribution; else a plain link.
+    payRow.addComponents(
+      billingSecret
+        ? new ButtonBuilder()
+            .setStyle(ButtonStyle.Secondary)
+            .setCustomId("aw:billing:pack")
+            .setLabel("Buy a Job Pack 🔋")
+        : new ButtonBuilder()
+            .setStyle(ButtonStyle.Link)
+            .setLabel("Buy a Job Pack 🔋")
+            .setURL(`${ctx.config.WEB_URL}/pay/${guildId}/pack`),
     );
+    rows.push(payRow);
+    // Cancel (Razorpay-managed subs only) needs the bot↔web bridge secret.
+    if (subscribed && guild.subSource !== "discord" && billingSecret) {
+      rows.push(
+        new ActionRowBuilder<ButtonBuilder>().addComponents(
+          new ButtonBuilder()
+            .setStyle(ButtonStyle.Danger)
+            .setCustomId("aw:billing:cancel")
+            .setLabel("Cancel subscription"),
+        ),
+      );
+    }
   }
 
   await interaction.reply({
@@ -368,6 +393,101 @@ export async function handleBillingCommand(
     ...(rows.length > 0 ? { components: rows } : {}),
     flags: MessageFlags.Ephemeral,
   });
+}
+
+/** Sign the Job-Pack attribution token the web `/pay/<g>/pack` route verifies
+ * (same HMAC scheme as web `verifyPackToken`). */
+function signPackToken(
+  secret: string,
+  payload: { g: string; u: string; n: string; e: number },
+): string {
+  const body = Buffer.from(JSON.stringify(payload), "utf8").toString(
+    "base64url",
+  );
+  const sig = createHmac("sha256", secret).update(body).digest("hex");
+  return `${body}.${sig}`;
+}
+
+/** Handles the bot-side `/billing` buttons: Job Pack (any member) and Cancel
+ * (manager-gated). Both bridge to the web (Razorpay lives there). */
+export async function handleBillingButton(
+  ctx: BotContext,
+  interaction: ButtonInteraction,
+  sub: "pack" | "cancel",
+): Promise<void> {
+  const guildId = interaction.guildId;
+  if (!guildId) return;
+  const secret = ctx.config.BILLING_BRIDGE_SECRET;
+  const webUrl = ctx.config.WEB_URL;
+  if (!secret || !webUrl) {
+    await interaction.reply({
+      content: "Billing isn't configured on this bot.",
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  if (sub === "pack") {
+    const name =
+      interaction.member && "displayName" in interaction.member
+        ? (interaction.member.displayName as string)
+        : interaction.user.username;
+    const token = signPackToken(secret, {
+      g: guildId,
+      u: interaction.user.id,
+      n: name,
+      e: Date.now() + 30 * 60_000,
+    });
+    await interaction.reply({
+      content:
+        "Add a Job Pack (50 code tasks) for the whole server — opens secure Razorpay checkout, and you get a public 🔋 credit.",
+      components: [
+        new ActionRowBuilder<ButtonBuilder>().addComponents(
+          new ButtonBuilder()
+            .setStyle(ButtonStyle.Link)
+            .setLabel("Continue to checkout 🔋")
+            .setURL(`${webUrl}/pay/${guildId}/pack?t=${token}`),
+        ),
+      ],
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  // cancel — manager only.
+  if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
+    await interaction.reply({
+      content: "Only server managers can cancel the subscription.",
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  try {
+    const res = await fetch(`${webUrl}/api/billing/cancel`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${secret}`,
+      },
+      body: JSON.stringify({ guildId }),
+    });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      await interaction.editReply(
+        `Couldn't cancel: ${body.error ?? `error ${res.status}`}.`,
+      );
+      return;
+    }
+    await interaction.editReply(
+      "Subscription set to cancel at the end of the current period — you keep access until then.",
+    );
+  } catch (err) {
+    log.warn({ err }, "billing cancel call failed");
+    await interaction.editReply(
+      "Couldn't reach billing right now. Try again shortly.",
+    );
+  }
 }
 
 const oauthDisabledMessage =

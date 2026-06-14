@@ -71,6 +71,13 @@
       "when": 1781420000000,
       "tag": "0009_byo_free_tier",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1781500000000,
+      "tag": "0010_guild_name",
+      "breakpoints": true
     }
   ]
 }

@@ -204,8 +204,8 @@ export function capExceededMessage(
   cap: { used: number; cap: number },
 ): string {
   const base = `This server hit its monthly ${mode === "code" ? "task" : "question"} limit (${cap.used}/${cap.cap}). Resets ${guild.capResetAt.toDateString()}.`;
-  if (mode !== "code" || !ctx.config.WEB_URL) return base;
-  return `${base}\nAny member can add more — buy a task pack at ${ctx.config.WEB_URL}/packs/${guild.id}, or upgrade at ${ctx.config.WEB_URL}/dashboard/${guild.id}.`;
+  if (mode !== "code") return base;
+  return `${base}\nRun \`/billing\` to add a Job Pack or upgrade — any member can buy a pack.`;
 }
 
 export type ThreadStrategy =

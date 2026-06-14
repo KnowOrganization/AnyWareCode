@@ -19,7 +19,8 @@ export default async function AdminLayout({ children }: { children: ReactNode })
   try {
     await requireAdmin();
   } catch {
-    redirect("/dashboard");
+    // Operators only; there is no user web. Bounce to Discord OAuth sign-in.
+    redirect("/api/auth/signin?callbackUrl=/admin");
   }
   return (
     <PageShell>

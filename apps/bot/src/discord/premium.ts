@@ -75,14 +75,22 @@ export async function applyEntitlement(
     log.error(`[operator] Discord SKU maps to missing plan row: ${planId}`);
     return;
   }
-  await applyGuildSubscription(ctx.db, entitlement.guildId, {
-    subStatus: "active",
-    subSource: "discord",
-    planId: plan.id,
-    taskCap: plan.taskCap,
-    concurrency: plan.concurrency,
-    currentPeriodEnd: entitlement.endsAt ?? null,
-  });
+  // Source guard symmetric with revokeEntitlement + the Razorpay webhook: a
+  // Discord event may only project over a fresh row or another Discord-funded
+  // one, never an "admin" override or a live "razorpay" subscription.
+  await applyGuildSubscription(
+    ctx.db,
+    entitlement.guildId,
+    {
+      subStatus: "active",
+      subSource: "discord",
+      planId: plan.id,
+      taskCap: plan.taskCap,
+      concurrency: plan.concurrency,
+      currentPeriodEnd: entitlement.endsAt ?? null,
+    },
+    { onlyIfSource: ["discord", null] },
+  );
   log.info(
     { guildId: entitlement.guildId, planId },
     "discord entitlement applied",

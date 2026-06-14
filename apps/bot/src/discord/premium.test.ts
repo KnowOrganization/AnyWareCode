@@ -97,6 +97,13 @@ describe("applyEntitlement", () => {
     expect(update).not.toHaveBeenCalled();
   });
 
+  it("never overwrites an admin override (source guard)", async () => {
+    const { db, sets } = mockDb({ guild: { subSource: "admin" } });
+    const { client } = mockClient();
+    await applyEntitlement({ db, config, client }, entitlement());
+    expect(sets).toHaveLength(0);
+  });
+
   it("credits a pack then consumes — and a replay never double-credits", async () => {
     const { db, sets } = mockDb();
     const { client, consume } = mockClient();

@@ -19,6 +19,7 @@ export default async function AdminGuilds({
   const status = STATUSES.includes(sp.status as never)
     ? (sp.status as (typeof STATUSES)[number])
     : undefined;
+  const sort = sp.sort === "usage" ? "usage" : "recent";
   const page = Math.max(0, Number(sp.page ?? "0") || 0);
 
   let rows: Guild[];
@@ -31,6 +32,7 @@ export default async function AdminGuilds({
       limit: PAGE_SIZE,
       offset: page * PAGE_SIZE,
       status,
+      sort,
     });
     rows = res.rows;
     total = res.total;
@@ -40,6 +42,7 @@ export default async function AdminGuilds({
     const p = new URLSearchParams();
     if (q) p.set("q", q);
     if (status) p.set("status", status);
+    if (sort !== "recent") p.set("sort", sort);
     for (const [k, v] of Object.entries(extra)) {
       if (v !== undefined && v !== "") p.set(k, String(v));
     }
@@ -52,7 +55,7 @@ export default async function AdminGuilds({
         <input
           name="q"
           defaultValue={q}
-          placeholder="Search by guild id…"
+          placeholder="Search by name or id…"
           className="rounded-md border border-line bg-surface-2 px-3 py-1.5 text-sm"
         />
         <select
@@ -67,6 +70,14 @@ export default async function AdminGuilds({
             </option>
           ))}
         </select>
+        <select
+          name="sort"
+          defaultValue={sort}
+          className="rounded-md border border-line bg-surface-2 px-3 py-1.5 text-sm"
+        >
+          <option value="recent">Newest</option>
+          <option value="usage">Top usage</option>
+        </select>
         <button
           type="submit"
           className="rounded-md bg-surface-2 px-3 py-1.5 text-sm hover:bg-surface-3"
@@ -79,7 +90,7 @@ export default async function AdminGuilds({
         <table className="w-full text-sm">
           <thead className="text-left text-muted">
             <tr className="border-b border-line">
-              <th className="p-3">Guild</th>
+              <th className="p-3">Server</th>
               <th className="p-3">Tier</th>
               <th className="p-3">Status</th>
               <th className="p-3">Source</th>
@@ -91,7 +102,10 @@ export default async function AdminGuilds({
           <tbody>
             {rows.map((g) => (
               <tr key={g.id} className="border-b border-line/60">
-                <td className="p-3 font-mono text-xs">{g.id}</td>
+                <td className="p-3">
+                  <div className="font-medium">{g.name ?? "—"}</div>
+                  <div className="font-mono text-xs text-muted">{g.id}</div>
+                </td>
                 <td className="p-3">{g.planId ?? "—"}</td>
                 <td className="p-3">
                   {g.suspended ? <Badge>suspended</Badge> : g.subStatus}

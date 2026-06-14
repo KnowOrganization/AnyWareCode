@@ -13,6 +13,7 @@ import {
   deleteGuildData,
   migrationsDir,
   schema,
+  setGuildName,
 } from "@anywarecode/db";
 import { ensureGuild } from "./discord/gates.js";
 import { approvePlanProposal, canApprovePlan } from "./discord/plan-votes.js";
@@ -122,6 +123,13 @@ client.on(Events.ClientReady, async (ready) => {
     captureError(err, { msg: "entitlement boot sweep failed" }),
   );
   startEntitlementSweeper(ctx);
+  // Best-effort backfill of server names for the admin panel (non-blocking).
+  void Promise.allSettled(
+    [...ready.guilds.cache.values()].map(async (g) => {
+      await ensureGuild(db, g.id, config);
+      await setGuildName(db, g.id, g.name);
+    }),
+  );
 });
 
 // Bot removed from a server: erase the guild's data (privacy + housekeeping).
@@ -135,6 +143,7 @@ client.on(Events.GuildDelete, async (guild) => {
 // Onboarding step 1: bot joins -> welcome message with Connect GitHub + LLM buttons.
 client.on(Events.GuildCreate, async (guild) => {
   await ensureGuild(db, guild.id, config);
+  await setGuildName(db, guild.id, guild.name).catch(() => {});
   const channel = findAnnounceChannel(guild);
   if (!channel) return;
   const state = await createInstallState(

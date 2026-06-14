@@ -51,6 +51,91 @@ export const PLAN_PRICE: Record<Tier, Record<Currency, number>> = {
 export const PACK_TASKS = 50;
 export const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3001";
 
+/** Create a Razorpay subscription and return its hosted-checkout short_url.
+ * The webhook is the source of truth; we resolve the guild from `notes`. */
+export async function createSubscriptionUrl(
+  guildId: string,
+  plan: Tier,
+  currency: Currency,
+): Promise<string> {
+  const planId = PLAN_IDS[plan][currency];
+  if (!planId) throw new Error(`Plan not configured for ${currency}`);
+  const sub = (await getRazorpay().subscriptions.create({
+    plan_id: planId,
+    total_count: 120, // ~10 years of monthly cycles = "until cancelled"
+    customer_notify: 1,
+    notes: { guildId, plan },
+  })) as { short_url?: string };
+  if (!sub.short_url) throw new Error("Could not start subscription checkout");
+  return sub.short_url;
+}
+
+/** Create a one-time Razorpay payment link for a Job Pack; returns short_url.
+ * The pack belongs to the server; the buyer is credited publicly via `notes`. */
+export async function createPackUrl(opts: {
+  guildId: string;
+  currency: Currency;
+  buyerId?: string;
+  buyerName?: string;
+}): Promise<string> {
+  // The SDK's create types are over-constrained; pass a loose body.
+  const createLink = getRazorpay().paymentLink.create as unknown as (
+    body: Record<string, unknown>,
+  ) => Promise<{ short_url?: string }>;
+  const link = await createLink({
+    amount: PACK_AMOUNTS[opts.currency],
+    currency: opts.currency,
+    accept_partial: false,
+    notes: {
+      kind: "task_pack",
+      guildId: opts.guildId,
+      purchasedBy: opts.buyerId ?? "unknown",
+      purchaserName: opts.buyerName ?? "a member",
+    },
+    // Webhook credits + the bot's pack-announcer posts the public thank-you, so
+    // the buyer just lands back on the marketing site.
+    callback_url: APP_URL,
+    callback_method: "get",
+  });
+  if (!link.short_url) throw new Error("Could not start pack checkout");
+  return link.short_url;
+}
+
+/** Pack-attribution token, signed by the bot and verified here, so a shared
+ * /pay link can't be forged to credit someone else. Payload: guild/buyer/exp. */
+export interface PackToken {
+  g: string; // guildId
+  u: string; // buyer discord id
+  n: string; // buyer display name
+  e: number; // expiry (epoch ms)
+}
+
+function billingSecret(): string {
+  const s = process.env.BILLING_BRIDGE_SECRET;
+  if (!s) throw new Error("BILLING_BRIDGE_SECRET not set");
+  return s;
+}
+
+export function verifyPackToken(token: string): PackToken | null {
+  try {
+    const [body, sig] = token.split(".");
+    if (!body || !sig) return null;
+    const expected = createHmac("sha256", billingSecret())
+      .update(body)
+      .digest("hex");
+    const a = Buffer.from(expected);
+    const b = Buffer.from(sig);
+    if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
+    const payload = JSON.parse(
+      Buffer.from(body, "base64url").toString("utf8"),
+    ) as PackToken;
+    if (typeof payload.e !== "number" || Date.now() > payload.e) return null;
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
 /** Auto-detect the buyer's currency from the request, INR for India else USD. */
 export function currencyFor(req: Request): Currency {
   const country = (

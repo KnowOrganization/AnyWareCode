@@ -58,11 +58,16 @@ Five workspaces, **three processes**, one protocol:
   `@anywarecode/db`.
 - `apps/runner` — the per-task payload, baked into the `anywarecode-runner` Docker
   image. Clones the repo, wraps the Claude Agent SDK, commits/pushes, exits.
-- `apps/web` — the Next.js dashboard + marketing site (deploy: Vercel). Discord
-  OAuth (Auth.js), reads `@anywarecode/db` directly, and owns the **only Razorpay
-  write surface** (`/api/razorpay/webhook` → guild billing columns; dual-currency
-  USD+INR by geo). The bot only *reads* those columns. Subscription checkout in
-  `/api/checkout`, one-time job packs in `/api/checkout/pack`.
+- `apps/web` — Next.js (deploy: Vercel). **There is no user-facing web app — users
+  live entirely in Discord.** It hosts three things: (1) the **marketing landing**
+  (`/`) + `/legal/*`; (2) the **company admin panel** (`/admin/**` + `/api/admin/**`),
+  Discord-OAuth gated via `ADMIN_DISCORD_IDS`/`ADMIN_API_SECRET` (`lib/admin.ts`),
+  for managing servers/tiers/packs/OSS/payments/audit; (3) **headless billing** — the
+  **only Razorpay write surface** `/api/razorpay/webhook` (dual-currency USD+INR by
+  geo), plus no-login pay-redirects `/pay/<guildId>/sub|pack` (302 → Razorpay hosted
+  page) that the bot links to from `/billing`, and `/api/billing/cancel` (shared-secret
+  `BILLING_BRIDGE_SECRET` bearer, called by the bot's Cancel button). Auth.js now
+  serves the admin panel only. The bot only *reads* the guild billing columns.
 
 **Request flow** (`/code` → PR):
 1. `discord/interactions.ts` validates perms/cap/repo, opens a thread, calls

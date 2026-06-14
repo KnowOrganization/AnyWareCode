@@ -71,9 +71,6 @@ export function LandingNav() {
           </nav>
 
           <div className="hidden items-center gap-3 md:flex">
-            <Cta href={site.DASHBOARD_URL} variant="bare">
-              Sign in
-            </Cta>
             <Cta href={site.INSTALL_URL} className="h-10 px-5">
               Add to Discord
             </Cta>
@@ -134,9 +131,6 @@ export function LandingNav() {
           >
             <Cta href={site.INSTALL_URL} className="w-full">
               Add to Discord
-            </Cta>
-            <Cta href={site.DASHBOARD_URL} variant="outline" className="w-full">
-              Sign in
             </Cta>
           </div>
         </div>
