@@ -3,17 +3,28 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/Button";
 
+type Currency = "INR" | "USD";
+
+const PRICE: Record<Currency, { pro: string; studio: string }> = {
+  USD: { pro: "$20/mo", studio: "$50/mo" },
+  INR: { pro: "₹1700/mo", studio: "₹4200/mo" },
+};
+
 export function BillingButtons({
   guildId,
   isActive,
   managedInDiscord = false,
+  defaultCurrency = "USD",
 }: {
   guildId: string;
   isActive: boolean;
-  /** Discord-entitlement-funded subs have no Stripe portal. */
+  /** Discord-entitlement-funded subs are managed in Discord. */
   managedInDiscord?: boolean;
+  /** Geo-detected currency (server passes it); user may override below. */
+  defaultCurrency?: Currency;
 }) {
   const [busy, setBusy] = useState(false);
+  const [currency, setCurrency] = useState<Currency>(defaultCurrency);
 
   async function go(path: string, body: Record<string, unknown>) {
     setBusy(true);
@@ -23,8 +34,13 @@ export function BillingButtons({
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body),
       });
-      const data = (await res.json()) as { url?: string; error?: string };
+      const data = (await res.json()) as {
+        url?: string;
+        cancelled?: boolean;
+        error?: string;
+      };
       if (data.url) window.location.href = data.url;
+      else if (data.cancelled) window.location.reload();
       else {
         alert(data.error ?? "Something went wrong.");
         setBusy(false);
@@ -49,29 +65,54 @@ export function BillingButtons({
       <Button
         variant="secondary"
         disabled={busy}
-        onClick={() => go("/api/portal", { guildId })}
+        onClick={() => {
+          if (confirm("Cancel this subscription at the end of the period?")) {
+            void go("/api/billing/cancel", { guildId });
+          }
+        }}
       >
-        Manage billing
+        Cancel subscription
       </Button>
     );
   }
 
   return (
-    <div className="flex flex-wrap gap-3">
-      <Button
-        variant="primary"
-        disabled={busy}
-        onClick={() => go("/api/checkout", { guildId, plan: "pro" })}
-      >
-        Upgrade to Pro — $20/mo
-      </Button>
-      <Button
-        variant="secondary"
-        disabled={busy}
-        onClick={() => go("/api/checkout", { guildId, plan: "studio" })}
-      >
-        Studio — $50/mo
-      </Button>
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center gap-2 text-sm">
+        <span className="text-muted">Currency:</span>
+        {(["USD", "INR"] as Currency[]).map((c) => (
+          <button
+            key={c}
+            type="button"
+            onClick={() => setCurrency(c)}
+            className={
+              currency === c
+                ? "rounded px-2 py-0.5 bg-fg/10 text-fg"
+                : "rounded px-2 py-0.5 text-muted hover:text-fg"
+            }
+          >
+            {c}
+          </button>
+        ))}
+      </div>
+      <div className="flex flex-wrap gap-3">
+        <Button
+          variant="primary"
+          disabled={busy}
+          onClick={() => go("/api/checkout", { guildId, plan: "pro", currency })}
+        >
+          Upgrade to Pro — {PRICE[currency].pro}
+        </Button>
+        <Button
+          variant="secondary"
+          disabled={busy}
+          onClick={() =>
+            go("/api/checkout", { guildId, plan: "studio", currency })
+          }
+        >
+          Studio — {PRICE[currency].studio}
+        </Button>
+      </div>
     </div>
   );
 }

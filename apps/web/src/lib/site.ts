@@ -235,7 +235,7 @@ export const tiers: Tier[] = [
   {
     id: "pro",
     name: "Pro",
-    price: "$20",
+    price: "$20 / ₹1700",
     period: "/mo",
     tagline: "One shared engineer for the whole server — no per-seat math.",
     features: [
@@ -251,7 +251,7 @@ export const tiers: Tier[] = [
   {
     id: "studio",
     name: "Studio",
-    price: "$50",
+    price: "$50 / ₹4200",
     period: "/mo",
     tagline: "For studios living in voice channels and shipping daily.",
     features: [
@@ -268,7 +268,7 @@ export const tiers: Tier[] = [
 /** Community-funded compute — shown under the tier grid. */
 export const taskPack = {
   name: "Task Pack",
-  price: "$10",
+  price: "$10 / ₹850",
   blurb:
     "50 extra code tasks for the server, buyable by ANY member — Discord-boost style, with public credit. Never expires while subscribed.",
 } as const;

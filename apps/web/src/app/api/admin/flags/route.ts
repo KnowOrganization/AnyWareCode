@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
-import { getSetting, setSetting } from "@anywherecode/db";
-import { isAdminRequest } from "@/lib/admin";
+import { z } from "zod";
+import { getSetting, setSetting, writeAudit } from "@anywherecode/db";
+import { AdminForbidden, requireAdmin } from "@/lib/admin";
+import { withAdmin } from "@/lib/adminRoute";
 import { db } from "@/lib/db";
 
 export const runtime = "nodejs";
@@ -10,26 +12,29 @@ export const runtime = "nodejs";
 const ALLOWED_FLAGS = ["claude_oauth_enabled"] as const;
 
 export async function GET(req: Request) {
-  if (!isAdminRequest(req)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  try {
+    await requireAdmin(req);
+  } catch (err) {
+    const status = err instanceof AdminForbidden ? 403 : 500;
+    return NextResponse.json({ error: "Forbidden" }, { status });
   }
   const flags: Record<string, unknown> = {};
   for (const key of ALLOWED_FLAGS) flags[key] = await getSetting(db, key);
   return NextResponse.json({ flags });
 }
 
-export async function POST(req: Request) {
-  if (!isAdminRequest(req)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
-  const { key, value } = (await req.json()) as { key?: string; value?: unknown };
-  if (
-    !key ||
-    !(ALLOWED_FLAGS as readonly string[]).includes(key) ||
-    typeof value !== "boolean"
-  ) {
-    return NextResponse.json({ error: "Bad request" }, { status: 400 });
-  }
-  await setSetting(db, key, value);
-  return NextResponse.json({ ok: true, key, value });
-}
+const Body = z
+  .object({ key: z.enum(ALLOWED_FLAGS), value: z.boolean() })
+  .strict();
+
+export const POST = withAdmin(Body, async ({ body, actorId }) => {
+  await setSetting(db, body.key, body.value);
+  await writeAudit(db, {
+    actorDiscordId: actorId,
+    action: "flag.set",
+    targetType: "flag",
+    targetId: body.key,
+    after: { value: body.value },
+  });
+  return NextResponse.json({ ok: true, key: body.key, value: body.value });
+});

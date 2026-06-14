@@ -3,12 +3,13 @@ import { createDb } from "./index.js";
 import { plans } from "./schema.js";
 
 /**
- * Idempotent plan seed. Run after creating the matching Stripe products:
- *   STRIPE_PRICE_PRO / STRIPE_PRICE_STUDIO hold the recurring price ids.
- * The Stripe webhook maps an incoming price id back to one of these rows.
+ * Idempotent plan seed. Run after creating the matching Razorpay plans (one per
+ * currency): RAZORPAY_PLAN_PRO_INR/USD, RAZORPAY_PLAN_STUDIO_INR/USD hold the
+ * recurring plan ids. The Razorpay webhook maps an incoming plan id back to one
+ * of these rows.
  *
  * Trial is NOT a plan row — it's guilds.subStatus "trialing", maintained by
- * ensureGuild. The OSS row has no Stripe price; it's granted via the admin
+ * ensureGuild. The OSS row has no Razorpay plan; it's granted via the admin
  * OSS-approval route.
  */
 
@@ -18,7 +19,8 @@ const PLAN_ROWS = [
     name: "OSS Community",
     taskCap: 30,
     concurrency: 1,
-    stripePriceId: null as string | null,
+    razorpayPlanIdInr: null as string | null,
+    razorpayPlanIdUsd: null as string | null,
     features: [
       "Verified public OSS servers",
       "Unlimited /ask on public repos",
@@ -33,7 +35,8 @@ const PLAN_ROWS = [
     name: "Pro",
     taskCap: 100,
     concurrency: 2,
-    stripePriceId: process.env.STRIPE_PRICE_PRO ?? null,
+    razorpayPlanIdInr: process.env.RAZORPAY_PLAN_PRO_INR ?? null,
+    razorpayPlanIdUsd: process.env.RAZORPAY_PLAN_PRO_USD ?? null,
     features: [
       "100 code tasks / mo",
       "2 concurrent tasks",
@@ -52,7 +55,8 @@ const PLAN_ROWS = [
     name: "Studio",
     taskCap: 500,
     concurrency: 5,
-    stripePriceId: process.env.STRIPE_PRICE_STUDIO ?? null,
+    razorpayPlanIdInr: process.env.RAZORPAY_PLAN_STUDIO_INR ?? null,
+    razorpayPlanIdUsd: process.env.RAZORPAY_PLAN_STUDIO_USD ?? null,
     features: [
       "500 code tasks / mo",
       "5 concurrent tasks",
@@ -83,7 +87,8 @@ for (const row of PLAN_ROWS) {
         name: row.name,
         taskCap: row.taskCap,
         concurrency: row.concurrency,
-        stripePriceId: row.stripePriceId,
+        razorpayPlanIdInr: row.razorpayPlanIdInr,
+        razorpayPlanIdUsd: row.razorpayPlanIdUsd,
         features: row.features,
         isDefault: row.isDefault,
       },

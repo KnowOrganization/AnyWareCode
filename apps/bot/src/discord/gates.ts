@@ -38,7 +38,7 @@ export function resolveTier(guild: Guild): Tier {
   if (guild.subStatus === "trialing") return { kind: "trial" };
   if (guild.planId === "oss" && guild.ossStatus === "approved")
     return { kind: "oss" };
-  // past_due keeps entitlements (Stripe retry grace); /billing shows a warning.
+  // past_due keeps entitlements (Razorpay charge-retry grace); /billing warns.
   if (
     guild.planId &&
     (guild.subStatus === "active" || guild.subStatus === "past_due")
@@ -192,7 +192,7 @@ export function planSummary(guild: Guild, now: Date = new Date()): PlanSummary {
 /**
  * Fetch-or-create the guild row. Handles lazy state transitions on every call:
  * monthly counter reset, and trial→free when the trial window has passed
- * (effective cap lives on `guild.taskCap`; the Stripe webhook sets it for paid
+ * (effective cap lives on `guild.taskCap`; the Razorpay webhook sets it for paid
  * tiers).
  */
 export async function ensureGuild(

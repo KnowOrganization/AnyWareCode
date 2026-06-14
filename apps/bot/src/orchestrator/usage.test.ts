@@ -135,7 +135,7 @@ describe("recordTaskPackPurchase", () => {
     purchaserName: "mo",
     tasks: 50,
     amountCents: 1000,
-    stripeCheckoutSessionId: "cs_1",
+    razorpayPaymentId: "pay_1",
   };
 
   it("credits the balance on first insert", async () => {
@@ -144,7 +144,7 @@ describe("recordTaskPackPurchase", () => {
     expect(update).toHaveBeenCalledTimes(1);
   });
 
-  it("is a no-op on a replayed Stripe session", async () => {
+  it("is a no-op on a replayed payment id", async () => {
     const { db, update } = mockTxDb([]);
     expect(await recordTaskPackPurchase(db, row)).toBe(false);
     expect(update).not.toHaveBeenCalled();

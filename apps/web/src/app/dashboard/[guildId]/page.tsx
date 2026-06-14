@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { getChannelReposForGuild, getGuild } from "@anywherecode/db";
 import { auth } from "@/auth";
@@ -114,6 +115,11 @@ export default async function GuildPage({
                 guildId={guildId}
                 isActive={view.status === "active"}
                 managedInDiscord={guild.subSource === "discord"}
+                defaultCurrency={
+                  ((await headers()).get("x-vercel-ip-country") ?? "").toUpperCase() === "IN"
+                    ? "INR"
+                    : "USD"
+                }
               />
             </div>
           </GlassCard>

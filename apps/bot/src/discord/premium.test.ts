@@ -126,9 +126,9 @@ describe("revokeEntitlement", () => {
   });
 
   it("sub delete cancels only a Discord-funded plan (source guard)", async () => {
-    const stripeFunded = mockDb({ guild: { subSource: "stripe" } });
-    await revokeEntitlement({ db: stripeFunded.db, config }, entitlement());
-    expect(stripeFunded.update).not.toHaveBeenCalled();
+    const razorpayFunded = mockDb({ guild: { subSource: "razorpay" } });
+    await revokeEntitlement({ db: razorpayFunded.db, config }, entitlement());
+    expect(razorpayFunded.update).not.toHaveBeenCalled();
 
     const discordFunded = mockDb({ guild: { subSource: "discord" } });
     await revokeEntitlement({ db: discordFunded.db, config }, entitlement());

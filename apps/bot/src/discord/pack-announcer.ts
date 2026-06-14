@@ -11,7 +11,7 @@ const SWEEP_INTERVAL_MS = 45_000;
 
 /**
  * Public credit for community-funded compute. The web app records purchases
- * (Stripe webhook); the bot polls for unannounced rows — DB polling keeps the
+ * (Razorpay webhook); the bot polls for unannounced rows — DB polling keeps the
  * web→bot path decoupled (no queue, no webhook between our own processes).
  * Rows are marked announced even when no channel is postable: no retry loop.
  */

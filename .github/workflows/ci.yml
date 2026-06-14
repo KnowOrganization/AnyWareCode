@@ -22,6 +22,8 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - run: pnpm lint
+
       # Workspace packages are dist-resolved; build them before typecheck/test.
       - run: pnpm -r build
 

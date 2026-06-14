@@ -109,7 +109,7 @@ async function creditPackEntitlement(
     purchaserName: purchaser?.username ?? "a member",
     tasks: 50,
     amountCents: 1000,
-    stripeCheckoutSessionId: `discord:${entitlement.id}`,
+    razorpayPaymentId: `discord:${entitlement.id}`,
   });
   await ctx.client.application?.entitlements
     .consume(entitlement.id)
@@ -138,7 +138,7 @@ export async function revokeEntitlement(
   if (entitlement.skuId === ctx.config.DISCORD_SKU_PACK) {
     const ledger = await ctx.db.query.taskPackPurchases.findFirst({
       where: eq(
-        schema.taskPackPurchases.stripeCheckoutSessionId,
+        schema.taskPackPurchases.razorpayPaymentId,
         `discord:${entitlement.id}`,
       ),
     });
@@ -160,7 +160,8 @@ export async function revokeEntitlement(
   const guild = await ctx.db.query.guilds.findFirst({
     where: eq(schema.guilds.id, entitlement.guildId),
   });
-  // Source guard: never cancel a Stripe-funded plan off a Discord event.
+  // Source guard: never cancel another rail's (Razorpay/admin) plan off a
+  // Discord event.
   if (guild?.subSource !== "discord") return;
   await applyGuildSubscription(ctx.db, entitlement.guildId, {
     subStatus: "canceled",

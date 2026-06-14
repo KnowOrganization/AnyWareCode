@@ -1,19 +1,25 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import {
   applyOssDecision,
   getPlan,
   listGuildInstallations,
   listPendingOssApplications,
+  writeAudit,
 } from "@anywherecode/db";
-import { isAdminRequest } from "@/lib/admin";
+import { AdminForbidden, requireAdmin } from "@/lib/admin";
+import { withAdmin } from "@/lib/adminRoute";
 import { db } from "@/lib/db";
 
 export const runtime = "nodejs";
 
 /** Operator review queue for OSS Community tier applications. */
 export async function GET(req: Request) {
-  if (!isAdminRequest(req)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  try {
+    await requireAdmin(req);
+  } catch (err) {
+    const status = err instanceof AdminForbidden ? 403 : 500;
+    return NextResponse.json({ error: "Forbidden" }, { status });
   }
   const pending = await listPendingOssApplications(db);
   return NextResponse.json({
@@ -29,17 +35,11 @@ export async function GET(req: Request) {
   });
 }
 
-export async function POST(req: Request) {
-  if (!isAdminRequest(req)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
-  const { guildId, approve } = (await req.json()) as {
-    guildId?: string;
-    approve?: boolean;
-  };
-  if (!guildId || typeof approve !== "boolean") {
-    return NextResponse.json({ error: "Bad request" }, { status: 400 });
-  }
+const Body = z
+  .object({ guildId: z.string(), approve: z.boolean() })
+  .strict();
+
+export const POST = withAdmin(Body, async ({ body, actorId }) => {
   const ossPlan = await getPlan(db, "oss");
   if (!ossPlan) {
     return NextResponse.json(
@@ -47,6 +47,13 @@ export async function POST(req: Request) {
       { status: 500 },
     );
   }
-  await applyOssDecision(db, guildId, approve, ossPlan);
-  return NextResponse.json({ ok: true, guildId, approve });
-}
+  await applyOssDecision(db, body.guildId, body.approve, ossPlan);
+  await writeAudit(db, {
+    actorDiscordId: actorId,
+    action: "oss.decide",
+    targetType: "guild",
+    targetId: body.guildId,
+    after: { approve: body.approve },
+  });
+  return NextResponse.json({ ok: true, guildId: body.guildId, approve: body.approve });
+});

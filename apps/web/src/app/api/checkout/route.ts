@@ -1,9 +1,14 @@
 import { NextResponse } from "next/server";
-import { getGuild, setGuildStripeCustomer } from "@anywherecode/db";
+import { getGuild } from "@anywherecode/db";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { userManagesGuild } from "@/lib/guilds";
-import { APP_URL, PRICE_IDS, getStripe } from "@/lib/stripe";
+import {
+  PLAN_IDS,
+  currencyFor,
+  getRazorpay,
+  resolveCurrency,
+} from "@/lib/razorpay";
 
 export const runtime = "nodejs";
 
@@ -12,9 +17,10 @@ export async function POST(req: Request) {
   if (!session?.accessToken) {
     return NextResponse.json({ error: "Not signed in" }, { status: 401 });
   }
-  const { guildId, plan } = (await req.json()) as {
+  const { guildId, plan, currency } = (await req.json()) as {
     guildId?: string;
     plan?: "pro" | "studio";
+    currency?: string;
   };
   if (!guildId || (plan !== "pro" && plan !== "studio")) {
     return NextResponse.json({ error: "Bad request" }, { status: 400 });
@@ -26,28 +32,30 @@ export async function POST(req: Request) {
   if (!guild) {
     return NextResponse.json({ error: "Bot not installed" }, { status: 404 });
   }
-  const price = PRICE_IDS[plan];
-  if (!price) {
-    return NextResponse.json({ error: "Plan not configured" }, { status: 500 });
+
+  const cur = resolveCurrency(currency, currencyFor(req));
+  const planId = PLAN_IDS[plan][cur];
+  if (!planId) {
+    return NextResponse.json(
+      { error: `Plan not configured for ${cur}` },
+      { status: 500 },
+    );
   }
 
-  const stripe = getStripe();
-  let customerId = guild.stripeCustomerId;
-  if (!customerId) {
-    const customer = await stripe.customers.create({ metadata: { guildId } });
-    customerId = customer.id;
-    await setGuildStripeCustomer(db, guildId, customerId);
+  // Razorpay subscription → hosted checkout (short_url). The webhook is the
+  // source of truth for the sub/customer ids; we resolve the guild from notes.
+  const sub = (await getRazorpay().subscriptions.create({
+    plan_id: planId,
+    total_count: 120, // ~10 years of monthly cycles = "until cancelled"
+    customer_notify: 1,
+    notes: { guildId, plan },
+  })) as { short_url?: string };
+
+  if (!sub.short_url) {
+    return NextResponse.json(
+      { error: "Could not start checkout" },
+      { status: 502 },
+    );
   }
-
-  const checkout = await stripe.checkout.sessions.create({
-    mode: "subscription",
-    customer: customerId,
-    line_items: [{ price, quantity: 1 }],
-    metadata: { guildId },
-    subscription_data: { metadata: { guildId } },
-    success_url: `${APP_URL}/dashboard/${guildId}?upgraded=1`,
-    cancel_url: `${APP_URL}/dashboard/${guildId}`,
-  });
-
-  return NextResponse.json({ url: checkout.url });
+  return NextResponse.json({ url: sub.short_url });
 }

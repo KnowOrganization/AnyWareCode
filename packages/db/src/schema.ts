@@ -12,7 +12,8 @@ import {
   timestamp,
 } from "drizzle-orm/pg-core";
 
-/** Subscription tiers. Seeded rows; stripePriceId links a tier to Stripe. */
+/** Subscription tiers. Seeded rows; razorpayPlanId* link a tier to Razorpay
+ * (one plan id per currency). */
 export const plans = pgTable("plans", {
   id: text("id").primaryKey(), // "oss" | "pro" | "studio" | ...
   name: text("name").notNull(),
@@ -20,7 +21,10 @@ export const plans = pgTable("plans", {
   taskCap: integer("task_cap").notNull(),
   /** Concurrent tasks per guild; mirrored onto guilds.concurrency. */
   concurrency: integer("concurrency").notNull().default(1),
-  stripePriceId: text("stripe_price_id"),
+  /** Razorpay plan id for INR subscriptions. */
+  razorpayPlanIdInr: text("razorpay_plan_id_inr"),
+  /** Razorpay plan id for USD (international) subscriptions. */
+  razorpayPlanIdUsd: text("razorpay_plan_id_usd"),
   features: jsonb("features").$type<string[]>().notNull().default([]),
   isDefault: boolean("is_default").notNull().default(false),
 });
@@ -45,7 +49,7 @@ export const guilds = pgTable("guilds", {
   /** Role allowed to invoke /code; null = server admins only. */
   allowedRoleId: text("allowed_role_id"),
   /** Effective monthly /code cap. Maintained by ensureGuild (trial/free) and
-   * the Stripe webhook (paid plan). capState reads this directly. */
+   * the Razorpay webhook / admin panel (paid plan). capState reads this directly. */
   taskCap: integer("task_cap").notNull().default(0),
   /** Effective concurrent-task limit; mirror of plans.concurrency, same
    * maintenance pattern as taskCap. */
@@ -60,12 +64,13 @@ export const guilds = pgTable("guilds", {
     .defaultNow(),
   /** Billing. planId references plans.id once on a paid tier. */
   planId: text("plan_id"),
-  stripeCustomerId: text("stripe_customer_id"),
-  stripeSubscriptionId: text("stripe_subscription_id"),
+  razorpayCustomerId: text("razorpay_customer_id"),
+  razorpaySubscriptionId: text("razorpay_subscription_id"),
   subStatus: subscriptionStatus("sub_status").notNull().default("trialing"),
   /** Which billing rail owns the subscription; cancel paths guard on it so a
-   * stale event from one rail can't wipe the other rail's plan. */
-  subSource: text("sub_source", { enum: ["stripe", "discord"] }),
+   * stale event from one rail can't wipe another rail's plan. "admin" = a
+   * manual operator override that no webhook rail may clobber. */
+  subSource: text("sub_source", { enum: ["razorpay", "discord", "admin"] }),
   /** Code tasks require the sponsoring member to have run /link github. */
   requireLinkedSponsor: boolean("require_linked_sponsor")
     .notNull()
@@ -101,6 +106,10 @@ export const guilds = pgTable("guilds", {
   /** Custom provider only: model name passed as ANTHROPIC_MODEL. */
   llmModel: text("llm_model"),
   llmCredentialSetAt: timestamp("llm_credential_set_at", { withTimezone: true }),
+  /** Bumped on every billing write; admin edits use it for optimistic concurrency. */
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
 });
 
 /**
@@ -238,8 +247,9 @@ export const proposals = pgTable("proposals", {
     .defaultNow(),
 });
 
-/** Task-pack purchase ledger. Unique Stripe session id makes webhook
- * retries/replays idempotent; announcedAt drives the bot's public credit. */
+/** Task-pack purchase ledger. Unique provider payment id makes webhook
+ * retries/replays idempotent; announcedAt drives the bot's public credit. The
+ * Discord rail uses a synthetic `discord:<entitlementId>` key here. */
 export const taskPackPurchases = pgTable("task_pack_purchases", {
   id: text("id").primaryKey(),
   guildId: text("guild_id").notNull(),
@@ -248,9 +258,7 @@ export const taskPackPurchases = pgTable("task_pack_purchases", {
   purchaserName: text("purchaser_name").notNull(),
   tasks: integer("tasks").notNull(),
   amountCents: integer("amount_cents").notNull(),
-  stripeCheckoutSessionId: text("stripe_checkout_session_id")
-    .notNull()
-    .unique(),
+  razorpayPaymentId: text("razorpay_payment_id").notNull().unique(),
   announcedAt: timestamp("announced_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
@@ -285,6 +293,36 @@ export const webhookDeliveries = pgTable("webhook_deliveries", {
     .notNull()
     .defaultNow(),
 });
+
+/** Razorpay webhook event dedup (event id). Same pattern as webhookDeliveries. */
+export const razorpayWebhookEvents = pgTable("razorpay_webhook_events", {
+  eventId: text("event_id").primaryKey(),
+  type: text("type").notNull(),
+  receivedAt: timestamp("received_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+/** Admin-panel mutation audit trail: who changed what, with before/after
+ * snapshots (billing columns only — never credential blobs). */
+export const adminAuditLog = pgTable(
+  "admin_audit_log",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    /** session.discordId, or "cli" for the bearer-token path. */
+    actorDiscordId: text("actor_discord_id").notNull(),
+    /** e.g. "guild.setTier", "guild.suspend", "plan.update", "oss.decide". */
+    action: text("action").notNull(),
+    targetType: text("target_type").notNull(), // "guild" | "plan" | "user"
+    targetId: text("target_id").notNull(),
+    before: jsonb("before"),
+    after: jsonb("after"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [index("admin_audit_log_target_idx").on(t.targetType, t.targetId)],
+);
 
 /** Per-repo feature config (issue feed, auto-review). Guild-singleton config
  * lives as columns on guilds instead. */
@@ -449,3 +487,5 @@ export type UserLink = typeof userLinks.$inferSelect;
 export type GuildInstallation = typeof guildInstallations.$inferSelect;
 export type McpServerRow = typeof mcpServers.$inferSelect;
 export type Squad = typeof squads.$inferSelect;
+export type RazorpayWebhookEvent = typeof razorpayWebhookEvents.$inferSelect;
+export type AdminAuditLog = typeof adminAuditLog.$inferSelect;
