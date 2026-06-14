@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  hostMessageSchema,
   llmAuthSchema,
   parseRunnerEvent,
   serializeEvent,
@@ -15,6 +16,9 @@ describe("runner event protocol", () => {
     { type: "edit_file", file: "src/auth/middleware.ts" },
     { type: "bash", command: "pnpm test" },
     { type: "tests", passed: true, summary: "12/12" },
+    { type: "check", name: "typecheck", passed: false, summary: "3 errors" },
+    { type: "plan_proposed", text: "1. patch auth\n2. add test" },
+    { type: "model_changed", model: "claude-opus-4-8" },
     { type: "assistant_text", text: "Done, opening a PR." },
     { type: "pushed", branch: "anywherecode/abc123" },
     {
@@ -159,7 +163,40 @@ describe("task spec", () => {
     expect(() => taskSpecSchema.parse(withoutCreds)).toThrow();
   });
 
+  it("defaults engine and leaves model/verify optional", () => {
+    const spec = taskSpecSchema.parse(base);
+    expect(spec.engine).toBe("claude");
+    expect(spec.model).toBeUndefined();
+    expect(spec.verify).toBeUndefined();
+  });
+
+  it("accepts plan mode, a model, and verify config", () => {
+    const spec = taskSpecSchema.parse({
+      ...base,
+      mode: "plan",
+      model: "claude-opus-4-8",
+      verify: { maxRepairAttempts: 2 },
+    });
+    expect(spec.mode).toBe("plan");
+    expect(spec.model).toBe("claude-opus-4-8");
+    expect(spec.verify?.enabled).toBe(true);
+    expect(spec.verify?.maxRepairAttempts).toBe(2);
+  });
+
   it("namespaces task branches", () => {
     expect(taskBranchName("abc123")).toBe("anywherecode/abc123");
+  });
+});
+
+describe("host message control plane", () => {
+  it("parses runtime control messages", () => {
+    for (const msg of [
+      { type: "set_model", model: "claude-opus-4-8" },
+      { type: "set_mode", mode: "plan" },
+      { type: "interrupt" },
+      { type: "cancel" },
+    ]) {
+      expect(hostMessageSchema.parse(msg)).toEqual(msg);
+    }
   });
 });

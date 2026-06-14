@@ -17,7 +17,13 @@ import { hasInstallation, listInstallations } from "../github/installations.js";
 import { findPreviewUrl, prHeadSha } from "../github/preview.js";
 import { applyPreviewToCard } from "./preview-card.js";
 import type { TaskOrchestrator } from "../orchestrator/taskRunner.js";
-import { canInvoke, capState, ensureGuild, resolveTier } from "./gates.js";
+import {
+  canInvoke,
+  capState,
+  ensureGuild,
+  planHasFeature,
+  resolveTier,
+} from "./gates.js";
 import {
   handleBillingCommand,
   handleConnectCommand,
@@ -25,7 +31,12 @@ import {
   handleLlmModal,
   handleSetupCommand,
 } from "./connect.js";
-import { checkTaskPreconditions, launchTask, truncate } from "./launch.js";
+import {
+  checkSystemTaskPreconditions,
+  checkTaskPreconditions,
+  launchTask,
+  truncate,
+} from "./launch.js";
 import { handleLinkCommand } from "./link.js";
 import { handleMemoryCommand, handleMemoryModal } from "./memory.js";
 import { handleMemorySuggestionButton } from "./memorySuggestions.js";
@@ -127,17 +138,36 @@ async function handleCommand(
   }
 }
 
+/** Per-user cooldown between task-launching commands (abuse/burst damping). */
+const commandCooldown = new Map<string, number>();
+
 async function startAgentTask(
   ctx: BotContext,
   interaction: ChatInputCommandInteraction,
   mode: "code" | "ask",
 ): Promise<void> {
   const guildId = interaction.guildId!;
+  const cooldownMs = ctx.config.COMMAND_COOLDOWN_SECONDS * 1000;
+  if (cooldownMs > 0) {
+    const key = `${guildId}:${interaction.user.id}`;
+    const now = Date.now();
+    const last = commandCooldown.get(key) ?? 0;
+    if (now - last < cooldownMs) {
+      await interaction.reply({
+        content: "⏳ Slow down — wait a few seconds between tasks.",
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+    commandCooldown.set(key, now);
+  }
   const prompt = interaction.options.getString(
     mode === "code" ? "task" : "question",
     true,
   );
   const guild = await ensureGuild(ctx.db, guildId, ctx.config);
+  const planNow =
+    mode === "code" && interaction.options.getBoolean("plan") === true;
 
   const pre = await checkTaskPreconditions(
     ctx,
@@ -162,8 +192,31 @@ async function startAgentTask(
     return;
   }
 
+  // Model selection is a paid perk; validate against the configured allowlist.
+  let model: string | undefined;
+  const requestedModel =
+    mode === "code" ? interaction.options.getString("model") : null;
+  if (requestedModel) {
+    if (!(await planHasFeature(ctx.db, guild.planId, "model_select"))) {
+      await interaction.reply({
+        content: "Choosing a model needs a Pro or Studio plan. See `/billing`.",
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+    const allow = ctx.config.modelAllowlist;
+    if (allow.length > 0 && !allow.includes(requestedModel)) {
+      await interaction.reply({
+        content: `That model isn't available here. Allowed: ${allow.join(", ")}.`,
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+    model = requestedModel;
+  }
+
   const squadN =
-    mode === "code" ? interaction.options.getInteger("squad") : null;
+    mode === "code" && !planNow ? interaction.options.getInteger("squad") : null;
   if (squadN !== null && squadN !== undefined) {
     const tier = resolveTier(guild);
     if (
@@ -181,7 +234,7 @@ async function startAgentTask(
     }
   }
 
-  if (mode === "code") {
+  if (mode === "code" && !planNow) {
     const decision = await maybeRequirePlanVote(ctx, {
       guild,
       authorId: interaction.user.id,
@@ -230,11 +283,12 @@ async function startAgentTask(
     return;
   }
 
-  const emoji = mode === "code" ? "🧵" : "💬";
+  const emoji = planNow ? "📋" : mode === "code" ? "🧵" : "💬";
   await interaction.reply(
     `${emoji} **${pre.repoFullName}** — ${truncate(prompt, 160)}`,
   );
   const reply = await interaction.fetchReply();
+  const namePrefix = planNow ? "plan" : mode === "code" ? "code" : "ask";
   await launchTask(ctx, {
     guildId,
     installationId: pre.installationId,
@@ -244,12 +298,14 @@ async function startAgentTask(
     prompt,
     requestedBy: interaction.user.username,
     requestedById: interaction.user.id,
+    ...(model ? { model } : {}),
+    ...(planNow ? { planMode: true } : {}),
     thread: {
       kind: "create",
       client: interaction.client,
       channelId: interaction.channelId,
       anchorMessageId: reply.id,
-      name: `${mode === "code" ? "code" : "ask"}: ${prompt}`,
+      name: `${namePrefix}: ${prompt}`,
     },
   });
 }
@@ -755,6 +811,69 @@ async function handleButton(
     await interaction.reply({
       content: "You don't have permission to do that.",
       flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  if (action === "plandismiss") {
+    ctx.orchestrator.takePendingPlan(taskId);
+    await interaction
+      .update({ content: "Plan dismissed.", embeds: [], components: [] })
+      .catch(() => {});
+    return;
+  }
+
+  if (action === "planimpl") {
+    const pending = ctx.orchestrator.peekPendingPlan(taskId);
+    if (!pending) {
+      await interaction.reply({
+        content: "This plan expired or was already implemented.",
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+    // Re-check cap/suspension/LLM since the plan was proposed (state can change).
+    const pre = await checkSystemTaskPreconditions(
+      ctx,
+      guild,
+      "code",
+      { repoFullName: pending.repoFullName, installationId: pending.installationId },
+      pending.prompt,
+    );
+    if (!pre.ok) {
+      await interaction.reply({ content: pre.reason, flags: MessageFlags.Ephemeral });
+      return;
+    }
+    ctx.orchestrator.takePendingPlan(taskId); // consume now that it will run
+    const thread = interaction.channel?.isThread()
+      ? (interaction.channel as ThreadChannel)
+      : ((await interaction.client.channels
+          .fetch(pending.threadId)
+          .catch(() => null)) as ThreadChannel | null);
+    if (!thread) {
+      await interaction.reply({
+        content: "Couldn't find the thread to implement the plan in.",
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+    await interaction.update({ components: [] }).catch(() => {});
+    await thread.send(
+      `🧵 Implementing the approved plan — requested by ${interaction.user.username}.`,
+    );
+    await launchTask(ctx, {
+      guildId: pending.guildId,
+      installationId: pending.installationId,
+      repoFullName: pending.repoFullName,
+      channelId: pending.channelId,
+      mode: "code",
+      prompt: pending.prompt,
+      requestedBy: interaction.user.username,
+      requestedById: interaction.user.id,
+      planApprovedBy: interaction.user.username,
+      ...(pending.model ? { model: pending.model } : {}),
+      transcript: [{ author: "plan", text: pending.planText }],
+      thread: { kind: "existing", thread },
     });
     return;
   }

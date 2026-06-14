@@ -7,6 +7,7 @@ import {
 import { eq } from "drizzle-orm";
 import type { Config } from "../config.js";
 import { schema, type Db } from "@anywherecode/db";
+import { log } from "../observability.js";
 
 function deriveKey(secret: string): Buffer {
   return Buffer.from(
@@ -83,6 +84,9 @@ export async function resolveLlmAuth(
       guild.llmCredentialEnc,
     );
     if (!token) {
+      // Operator-visible signal for a CREDENTIAL_SECRET rotation / mismatch
+      // (message only — never the blob).
+      log.warn({ guildId }, "guild LLM credential failed to decrypt");
       return {
         auth: null,
         reason:

@@ -96,9 +96,38 @@ const configSchema = z.object({
   STANDUP_MAX_UTTERANCE_SECONDS: z.coerce.number().int().default(60),
   /** Public dashboard URL for upgrade/billing links. */
   WEB_URL: z.string().default(""),
+  /** Which runner engine to use. "claude" = Claude Agent SDK (default). */
+  RUNNER_ENGINE: z.enum(["claude", "claw"]).default("claude"),
+  /** Model used when a task doesn't request one (BYO providers use their own). */
+  DEFAULT_MODEL: z.string().default("claude-sonnet-4-6"),
+  /** Selectable models for /code (csv); empty = no picker, DEFAULT_MODEL only. */
+  MODEL_ALLOWLIST: z
+    .string()
+    .default("claude-opus-4-8,claude-sonnet-4-6,claude-haiku-4-5"),
+  /** Hard cap on agent turns per task (runaway guard). */
+  MAX_AGENT_TURNS: z.coerce.number().int().default(60),
+  /** Master switch for the verification + self-repair loop. */
+  VERIFY_ENABLED: z
+    .string()
+    .default("true")
+    .transform((v) => v === "true" || v === "1"),
+  /** Repair attempts after a failed check (paid tiers; trial is forced to 0). */
+  VERIFY_MAX_REPAIR_ATTEMPTS: z.coerce.number().int().min(0).max(5).default(2),
+  /** Share of remaining wall-clock reserved for verify+repair (0..1). */
+  VERIFY_RESERVE_FRACTION: z.coerce.number().min(0).max(0.9).default(0.25),
+  /** Stronger model used for repair turns (escalation); empty = no escalation. */
+  VERIFY_REPAIR_MODEL: z.string().default("claude-opus-4-8"),
+  /** Escalate to VERIFY_REPAIR_MODEL only after this many failed repairs (0 = first repair). */
+  VERIFY_ESCALATE_AFTER: z.coerce.number().int().min(0).max(5).default(1),
+  /** Per-user cooldown between task-launching commands, in seconds (abuse damping). */
+  COMMAND_COOLDOWN_SECONDS: z.coerce.number().int().min(0).default(5),
 });
 
-export type Config = z.infer<typeof configSchema>;
+/** Parsed config plus derived convenience fields. */
+export type Config = z.infer<typeof configSchema> & {
+  /** MODEL_ALLOWLIST parsed once into a trimmed, non-empty list. */
+  modelAllowlist: string[];
+};
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const result = configSchema.safeParse(env);
@@ -117,5 +146,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       "Invalid configuration: RUNNER_NETWORK and RUNNER_HTTPS_PROXY must both be set (prod) or both empty (dev).",
     );
   }
-  return result.data;
+  const modelAllowlist = result.data.MODEL_ALLOWLIST.split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return { ...result.data, modelAllowlist };
 }

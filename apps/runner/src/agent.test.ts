@@ -2,8 +2,13 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import type { TaskSpec } from "@anywherecode/shared";
-import { buildSystemAppend, detectGameEngine, sdkMessageToEvents } from "./agent.js";
+import {
+  buildSystemAppend,
+  detectGameEngine,
+  detectStack,
+  sdkMessageToEvents,
+} from "./agent.js";
+import { createTaskSpec as specWith } from "./test-fixtures.js";
 
 function assistant(content: unknown[]): unknown {
   return { type: "assistant", message: { content } };
@@ -58,23 +63,6 @@ describe("sdkMessageToEvents", () => {
   });
 });
 
-function specWith(overrides: Partial<TaskSpec>): TaskSpec {
-  return {
-    taskId: "t",
-    repo: "o/r",
-    branch: "anywherecode/t",
-    baseBranch: "main",
-    prompt: "do it",
-    mode: "code",
-    transcript: [],
-    resumeBranch: false,
-    githubToken: "gh",
-    llmAuth: { type: "anthropic_api_key", token: "sk" },
-    mcpServers: [],
-    ...overrides,
-  };
-}
-
 describe("buildSystemAppend", () => {
   it("frames server memory after the hardening rules", () => {
     const out = buildSystemAppend(
@@ -109,6 +97,32 @@ describe("buildSystemAppend", () => {
       mkdtempSync(path.join(tmpdir(), "aw-")),
     );
     expect(out).toContain("read-only access");
+  });
+
+  it("appends craft rules for code mode, after the hardening rules", () => {
+    const out = buildSystemAppend(
+      specWith({ mode: "code" }),
+      mkdtempSync(path.join(tmpdir(), "aw-")),
+    );
+    expect(out).toContain("smallest diff");
+    expect(out.indexOf("untrusted data")).toBeLessThan(out.indexOf("smallest diff"));
+  });
+
+  it("omits craft rules in ask mode", () => {
+    const out = buildSystemAppend(
+      specWith({ mode: "ask" }),
+      mkdtempSync(path.join(tmpdir(), "aw-")),
+    );
+    expect(out).not.toContain("smallest diff");
+  });
+
+  it("adds stack rules for a detected TypeScript project", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "aw-"));
+    writeFileSync(path.join(dir, "tsconfig.json"), "{}");
+    expect(detectStack(dir)).toContain("ts");
+    expect(buildSystemAppend(specWith({ mode: "code" }), dir)).toContain(
+      "TypeScript:",
+    );
   });
 
   it("injects the repo's AGENTS.md framed as data, after the hardening rules", () => {

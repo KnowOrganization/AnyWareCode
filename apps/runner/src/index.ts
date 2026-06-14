@@ -5,7 +5,8 @@ import {
   taskSpecSchema,
   type TaskSpec,
 } from "@anywherecode/shared";
-import { ClaudeAgent } from "./agent.js";
+import { ClaudeAgent, type Agent } from "./agent.js";
+import { ClawAgent } from "./claw.js";
 import {
   checkoutTaskBranch,
   cloneRepo,
@@ -13,10 +14,18 @@ import {
   diffSummary,
 } from "./git.js";
 import { emit, readLines, redactSecrets, registerSecret } from "./io.js";
+import { preflight } from "./preflight.js";
+import {
+  budgetForVerify,
+  buildRepairPrompt,
+  detectChecks,
+  runChecks,
+} from "./verify.js";
 
 const WORK_ROOT = "/work";
 
 async function main(): Promise<void> {
+  const startMs = Date.now();
   const lines = readLines(process.stdin);
   const first = await lines.next();
   if (first.done) throw new Error("no TaskSpec on stdin");
@@ -53,6 +62,12 @@ async function main(): Promise<void> {
       break;
   }
 
+  // Preflight: fail fast with a clear message instead of a deep SDK error.
+  const problems = preflight(spec);
+  if (problems.length > 0) {
+    throw new Error(`Preflight failed: ${problems.join("; ")}`);
+  }
+
   const workdir = path.join(WORK_ROOT, "repo");
   await mkdir(WORK_ROOT, { recursive: true });
   const gitCtx = { workdir, repo: spec.repo, token: spec.githubToken };
@@ -62,29 +77,131 @@ async function main(): Promise<void> {
     await checkoutTaskBranch(gitCtx, spec.branch, spec.resumeBranch);
   }
 
-  const agent = new ClaudeAgent();
+  // Engine selection happens behind the Agent seam — the bot only knows the
+  // protocol. claw is opt-in and experimental; default is the Claude Agent SDK.
+  const newAgent = (): Agent =>
+    spec.engine === "claw" ? new ClawAgent() : new ClaudeAgent();
 
-  // Forward host messages (thread replies, cancel) into the agent.
+  // A mutable holder so repair turns can swap in a fresh agent while the host
+  // control channel below always steers the one that's currently running.
+  const agentRef: { current: Agent } = { current: newAgent() };
+  let aborted = false;
+  let summary: string | undefined;
+  let planProposed = false;
+
+  // Forward host messages (thread replies, control plane, cancel) into the agent.
   void (async () => {
     for await (const line of lines) {
       if (!line.trim()) continue;
-      const parsed = hostMessageSchema.safeParse(JSON.parse(line));
-      if (!parsed.success) continue;
-      if (parsed.data.type === "cancel") {
-        agent.cancel();
-        return;
+      let json: unknown;
+      try {
+        json = JSON.parse(line);
+      } catch {
+        continue;
       }
-      agent.pushUserMessage(parsed.data.author, parsed.data.text);
+      const parsed = hostMessageSchema.safeParse(json);
+      if (!parsed.success) continue;
+      switch (parsed.data.type) {
+        case "cancel":
+          aborted = true;
+          agentRef.current.cancel();
+          return;
+        case "interrupt":
+          agentRef.current.interrupt();
+          break;
+        case "set_model":
+          agentRef.current.setModel(parsed.data.model || undefined);
+          emit({ type: "model_changed", model: parsed.data.model || "default" });
+          break;
+        case "set_mode":
+          agentRef.current.setPermissionMode(parsed.data.mode);
+          break;
+        case "user_message":
+          agentRef.current.pushUserMessage(parsed.data.author, parsed.data.text);
+          break;
+      }
     }
-  })().catch(() => agent.cancel());
+  })().catch((err: unknown) => {
+    emit({
+      type: "error",
+      message: redactSecrets(
+        `host message loop failed: ${err instanceof Error ? err.message : String(err)}`,
+      ),
+    });
+    agentRef.current.cancel();
+  });
 
-  let summary: string | undefined;
-  for await (const event of agent.run(spec, workdir)) {
-    if (event.type === "done") {
-      summary = event.summary;
-      continue; // emitted last, after the push
+  async function drain(agent: Agent, runSpec: TaskSpec): Promise<void> {
+    for await (const event of agent.run(runSpec, workdir)) {
+      if (event.type === "done") {
+        summary = event.summary;
+        continue; // emitted last, after the push
+      }
+      if (event.type === "plan_proposed") planProposed = true;
+      emit(event);
     }
-    emit(event);
+  }
+
+  await drain(agentRef.current, spec);
+
+  // Plan mode: if the agent didn't call ExitPlanMode, surface its final summary
+  // as the proposed plan so the host can still post approve buttons.
+  if (spec.mode === "plan" && !planProposed && summary?.trim()) {
+    emit({ type: "plan_proposed", text: summary.trim() });
+  }
+
+  // Verification + self-repair (code mode): run the project's checks, and on
+  // failure feed them back to a fresh agent on the same working tree, up to the
+  // tier-gated repair budget. The runner judges; the agent fixes.
+  if (spec.mode === "code" && spec.verify?.enabled && !aborted) {
+    const deadlineMs =
+      startMs + (Number(process.env.TASK_TIMEOUT_MINUTES) || 30) * 60_000;
+    const repairModel = process.env.VERIFY_REPAIR_MODEL?.trim();
+    // Escalate to the stronger model only after this many failed repairs (cost).
+    const escalateAfter = Number(process.env.VERIFY_ESCALATE_AFTER ?? "1");
+    const maxAttempts = spec.verify.maxRepairAttempts ?? 0;
+    for (let attempt = 0; !aborted; attempt++) {
+      const detection = detectChecks(workdir, spec);
+      if (detection.skipped) {
+        emit({ type: "check", name: "verify", passed: true, summary: detection.reason });
+        break;
+      }
+      const budget = budgetForVerify(deadlineMs, Date.now());
+      if (!budget.canRun) {
+        emit({
+          type: "check",
+          name: "verify",
+          passed: true,
+          summary: "skipped — time budget exhausted",
+        });
+        break;
+      }
+      const results = await runChecks(detection.checks, workdir, budget);
+      for (const r of results) {
+        emit({ type: "check", name: r.name, passed: r.passed, summary: r.summary });
+      }
+      const failures = results.filter((r) => !r.passed);
+      if (failures.length === 0 || attempt >= maxAttempts || aborted) break;
+
+      // Repair turn: fresh agent, same tree. Early repairs reuse the run's
+      // model; escalate to the stronger model only after `escalateAfter` tries.
+      const escalate =
+        Boolean(repairModel) &&
+        spec.llmAuth.type !== "custom" &&
+        attempt >= escalateAfter;
+      const useModel = escalate ? repairModel : spec.model;
+      if (escalate && repairModel !== spec.model) {
+        emit({ type: "model_changed", model: repairModel! });
+      }
+      const repairSpec: TaskSpec = {
+        ...spec,
+        transcript: [],
+        prompt: buildRepairPrompt(spec.prompt, failures),
+        ...(useModel ? { model: useModel } : {}),
+      };
+      agentRef.current = newAgent();
+      await drain(agentRef.current, repairSpec);
+    }
   }
 
   if (spec.mode === "code") {

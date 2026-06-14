@@ -14,13 +14,14 @@ import {
 } from "@anywherecode/shared";
 import type { Config } from "../config.js";
 import { schema, type Db } from "@anywherecode/db";
+import { planHasFeature } from "../discord/gates.js";
 import { mcpServersForSpec } from "../discord/mcp.js";
 import { maybeSuggestMemory } from "../discord/memorySuggestions.js";
 import { prCardButtons } from "../discord/preview-card.js";
 import type { GitHubService } from "../github/app.js";
 import { getUserLink } from "../github/user-link.js";
 import { isAuthError, resolveLlmAuth } from "../llm/credentials.js";
-import { log } from "../observability.js";
+import { captureError, log } from "../observability.js";
 import { GuildTaskLimiter } from "./limiter.js";
 import { ProgressRenderer, ThrottledUpdater } from "./renderer.js";
 import { refundUsage, type FundedBy } from "./usage.js";
@@ -43,6 +44,10 @@ export interface StartTaskParams {
   /** Provenance: who approved the plan vote (omitted = instant mode). */
   planApprovedBy?: string;
   mode: "code" | "ask";
+  /** Per-task model override (paid tiers; ignored for custom providers). */
+  model?: string;
+  /** Plan-first: run the agent in plan mode, post the plan for approval. */
+  planMode?: boolean;
   /** Quota bucket launchTask consumed for this task; refunds reverse it. */
   fundedBy?: FundedBy;
   /** Iterate flow: continue an existing branch/PR instead of opening a new one. */
@@ -70,6 +75,10 @@ export interface RunOutcome {
   prNumber: number | null;
   summary?: string;
   diffFiles: Array<{ path: string; additions: number; deletions: number }>;
+  /** False when verification checks were still failing at push time. */
+  verified?: boolean;
+  /** Names of checks still failing at push time (empty/omitted when verified). */
+  failingChecks?: string[];
 }
 
 interface ActiveTask {
@@ -87,12 +96,34 @@ interface ActiveTask {
   terminalReason: TerminalReason | null;
   /** "guild" if the LLM credential came from the guild row; "platform" if from config. */
   llmSource: "guild" | "platform" | null;
+  /** Whether this guild's plan permits model selection (gates mid-run !model). */
+  modelSelectAllowed: boolean;
+  /** False for plan-mode runs (free) so a failure never refunds a non-charge. */
+  charged: boolean;
+}
+
+/** A plan-mode result awaiting an Implement click (in-memory, like active tasks). */
+export interface PendingPlan {
+  guildId: string;
+  installationId: number;
+  channelId: string;
+  threadId: string;
+  repoFullName: string;
+  prompt: string;
+  requestedBy: string;
+  requestedById: string | null;
+  model: string | null;
+  planText: string;
+  /** Epoch ms when proposed; used to expire stale plans (PLAN_VOTE_TTL_MINUTES). */
+  createdAt: number;
 }
 
 export class TaskOrchestrator {
   private limiter = new GuildTaskLimiter();
   /** threadId -> running task, used for reply forwarding and /cancel. */
   private active = new Map<string, ActiveTask>();
+  /** taskId -> proposed plan awaiting an Implement click. */
+  private pendingPlans = new Map<string, PendingPlan>();
 
   constructor(
     private db: Db,
@@ -112,6 +143,33 @@ export class TaskOrchestrator {
   forwardThreadMessage(threadId: string, author: string, text: string): void {
     const task = this.active.get(threadId);
     if (!task) return;
+    // Runtime control commands steer the live agent instead of adding a turn.
+    const model = /^!model\s+(\S+)/.exec(text.trim());
+    if (model?.[1]) {
+      // Gate mid-run escalation by the same rules as the /code picker so a
+      // trial/free guild can't switch to an expensive model via the thread.
+      const requested = model[1];
+      const allowed =
+        task.modelSelectAllowed &&
+        (this.config.modelAllowlist.length === 0 ||
+          this.config.modelAllowlist.includes(requested));
+      if (allowed) task.handle?.send({ type: "set_model", model: requested });
+      else
+        task.handle?.send({
+          type: "user_message",
+          author: "system",
+          text: `(Ignored "!model ${requested}": model selection needs a Pro/Studio plan or an allowed model.)`,
+        });
+      return;
+    }
+    const modeCmd = /^!mode\s+(code|ask|plan)\b/.exec(text.trim());
+    if (modeCmd?.[1]) {
+      task.handle?.send({
+        type: "set_mode",
+        mode: modeCmd[1] as "code" | "ask" | "plan",
+      });
+      return;
+    }
     task.corrections.push({ author, text });
     task.handle?.send({ type: "user_message", author, text });
   }
@@ -164,6 +222,8 @@ export class TaskOrchestrator {
       handle: null,
       terminalReason: null,
       llmSource: null,
+      modelSelectAllowed: false,
+      charged: !params.planMode,
     };
     this.active.set(params.thread.id, task);
 
@@ -192,6 +252,25 @@ export class TaskOrchestrator {
         };
       }
       return await this.execute(task, branch, baseBranch, params);
+    } catch (err) {
+      // An unexpected throw (GitHub/Discord/DB) must still settle the task —
+      // otherwise the row is stuck "running" and quota isn't refunded until the
+      // next boot's recovery sweep. Idempotent with that sweep.
+      captureError(err, { msg: "task execute crashed", taskId });
+      if (!task.terminalReason) {
+        await this.settle(task, "failed").catch(() => {});
+        await params.thread
+          .send("⚠️ The task failed unexpectedly. Nothing was pushed.")
+          .catch(() => {});
+      }
+      return {
+        taskId,
+        status: "failed",
+        pushed: false,
+        branch,
+        prNumber: null,
+        diffFiles: [],
+      };
     } finally {
       this.limiter.release(params.guildId);
       this.active.delete(params.thread.id);
@@ -228,12 +307,48 @@ export class TaskOrchestrator {
     }
     task.llmSource = resolved.source;
 
+    // One guild fetch for both feature checks (model_select + verify_loop).
+    const guildRow = await this.db.query.guilds.findFirst({
+      where: eq(schema.guilds.id, params.guildId),
+    });
+    const planId = guildRow?.planId ?? null;
+    task.modelSelectAllowed = await planHasFeature(
+      this.db,
+      planId,
+      "model_select",
+    );
+
+    // Verification + self-repair: paid tiers (with the feature) get repair turns;
+    // trial/platform-key runs only report check results (no token-burning repair).
+    const verifyOn =
+      this.config.VERIFY_ENABLED && params.mode === "code" && !params.planMode;
+    let maxRepairAttempts = 0;
+    if (
+      verifyOn &&
+      task.llmSource !== "platform" &&
+      (await planHasFeature(this.db, planId, "verify_loop"))
+    ) {
+      maxRepairAttempts = this.config.VERIFY_MAX_REPAIR_ATTEMPTS;
+    }
+
+    // Platform-key (trial) tasks get the tighter wall clock — bounds the cost
+    // of trial farming alongside the egress allowlist.
+    const timeoutMinutes =
+      task.llmSource === "platform"
+        ? Math.min(
+            this.config.TASK_TIMEOUT_MINUTES,
+            this.config.TRIAL_TASK_TIMEOUT_MINUTES,
+          )
+        : this.config.TASK_TIMEOUT_MINUTES;
+
     // Ask mode is read-only by contract — its token can't push (defense in
     // depth for runs that execute untrusted content, e.g. Repro Gate).
+    // Plan mode never pushes, so it gets a read-only token like ask mode.
+    const canPush = params.mode === "code" && !params.planMode;
     const token = await this.github.mintRepoToken(
       params.installationId,
       params.repoFullName,
-      params.mode === "code",
+      canPush,
     );
     // Server Memory: trusted per-repo conventions, injected into every run.
     const memoryRow = await this.db.query.serverMemories.findFirst({
@@ -268,14 +383,17 @@ export class TaskOrchestrator {
           ? params.checkoutRef
           : baseBranch,
       prompt: params.prompt,
-      mode: params.mode,
+      mode: params.planMode ? "plan" : params.mode,
+      engine: this.config.RUNNER_ENGINE,
       transcript: params.transcript ?? params.iterate?.transcript ?? [],
       resumeBranch: Boolean(params.iterate),
       githubToken: token,
       llmAuth: resolved.auth,
       mcpServers: mcp.servers,
+      ...(params.model ? { model: params.model } : {}),
+      ...(verifyOn ? { verify: { enabled: true, maxRepairAttempts } } : {}),
       ...(memoryRow?.content.trim() ? { memory: memoryRow.content } : {}),
-      ...(params.mode === "code" ? { provenance: { trailers } } : {}),
+      ...(canPush ? { provenance: { trailers } } : {}),
     };
     for (const warning of mcp.warnings) {
       await thread.send(warning).catch(() => {});
@@ -284,13 +402,34 @@ export class TaskOrchestrator {
     // Only non-secret config goes in the container environment.
     const env: Record<string, string> = {
       CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
+      MAX_AGENT_TURNS: String(this.config.MAX_AGENT_TURNS),
+      TASK_TIMEOUT_MINUTES: String(timeoutMinutes),
     };
+    // Repair-turn model escalation (paid tiers only — gated by maxRepairAttempts).
+    if (maxRepairAttempts > 0 && this.config.VERIFY_REPAIR_MODEL) {
+      env.VERIFY_REPAIR_MODEL = this.config.VERIFY_REPAIR_MODEL;
+      env.VERIFY_ESCALATE_AFTER = String(this.config.VERIFY_ESCALATE_AFTER);
+    }
     if (this.config.RUNNER_HTTPS_PROXY) {
       env.HTTPS_PROXY = this.config.RUNNER_HTTPS_PROXY;
       env.HTTP_PROXY = this.config.RUNNER_HTTPS_PROXY;
     }
 
-    const handle = await this.workspace.start(spec, env);
+    let handle: WorkspaceHandle;
+    try {
+      handle = await withTimeout(
+        this.workspace.start(spec, env),
+        WORKSPACE_START_TIMEOUT_MS,
+        "workspace start timed out",
+      );
+    } catch (err) {
+      captureError(err, { msg: "workspace start failed", taskId });
+      await this.settle(task, "failed");
+      await thread.send(
+        "⚠️ Couldn't start the task container (the host may be busy). Try again shortly.",
+      );
+      return out("failed");
+    }
     task.handle = handle;
     // A /cancel that landed between slot acquisition and here.
     if (this.reasonOf(task) === "cancel") {
@@ -304,15 +443,6 @@ export class TaskOrchestrator {
       .set({ status: "running", containerId: handle.id })
       .where(eq(schema.tasks.id, taskId));
 
-    // Platform-key (trial) tasks get the tighter wall clock — bounds the cost
-    // of trial farming alongside the egress allowlist.
-    const timeoutMinutes =
-      task.llmSource === "platform"
-        ? Math.min(
-            this.config.TASK_TIMEOUT_MINUTES,
-            this.config.TRIAL_TASK_TIMEOUT_MINUTES,
-          )
-        : this.config.TASK_TIMEOUT_MINUTES;
     const timeout = setTimeout(
       () => {
         task.terminalReason = "timeout";
@@ -341,9 +471,14 @@ export class TaskOrchestrator {
     let pushed = false;
     let errorMessage: string | null = null;
     let summary: string | undefined;
+    let planText: string | null = null;
     let diffFiles: Array<{ path: string; additions: number; deletions: number }> =
       [];
     const testResults: Array<{ passed: boolean; summary: string }> = [];
+    // Final verification state: a check name is "failing" if its LAST result
+    // failed (a repair turn that fixes it removes it from the set).
+    const failingChecks = new Set<string>();
+    let checksRan = false;
 
     try {
       for await (const event of handle.events) {
@@ -356,6 +491,16 @@ export class TaskOrchestrator {
         if (event.type === "pushed") pushed = true;
         if (event.type === "diff_summary") diffFiles = event.files;
         if (event.type === "tests") testResults.push(event);
+        if (event.type === "check") {
+          testResults.push({
+            passed: event.passed,
+            summary: `${event.name}: ${event.summary}`,
+          });
+          checksRan = true;
+          if (event.passed) failingChecks.delete(event.name);
+          else failingChecks.add(event.name);
+        }
+        if (event.type === "plan_proposed") planText = event.text;
         if (event.type === "error") errorMessage = event.message;
         if (event.type === "done") summary = event.summary;
         if (renderer.add(event)) updater.schedule();
@@ -398,6 +543,44 @@ export class TaskOrchestrator {
         );
       }
       return out("failed");
+    }
+
+    // Plan mode: post the proposed plan with an approve button; the actual
+    // code task launches only when someone clicks Implement.
+    if (params.planMode) {
+      await this.settle(task, "done");
+      if (planText?.trim()) {
+        this.sweepPendingPlans();
+        this.pendingPlans.set(taskId, {
+          guildId: params.guildId,
+          installationId: params.installationId,
+          channelId: params.channelId,
+          threadId: thread.id,
+          repoFullName: params.repoFullName,
+          prompt: params.prompt,
+          requestedBy: params.requestedBy,
+          requestedById: params.requestedById ?? null,
+          model: params.model ?? null,
+          planText: planText.trim(),
+          createdAt: Date.now(),
+        });
+        await thread.send({
+          embeds: [
+            new EmbedBuilder()
+              .setColor(0x5865f2)
+              .setTitle("📋 Proposed plan")
+              .setDescription(truncateForDiscord(planText.trim())),
+          ],
+          components: [planApprovalButtons(taskId)],
+        });
+      } else {
+        await thread.send(
+          summary
+            ? `📋 ${truncateForDiscord(summary)}`
+            : "ℹ️ The agent finished planning without producing a plan.",
+        );
+      }
+      return out("done", { summary });
     }
 
     if (params.mode === "ask") {
@@ -463,6 +646,10 @@ export class TaskOrchestrator {
       return out("done", { summary });
     }
 
+    // Honest verification labeling: surface checks that were still failing when
+    // the run ended (changes are pushed regardless — humans are the merge gate).
+    const failing = [...failingChecks];
+    const verified = !checksRan || failing.length === 0;
     const receipt = provenanceReceipt({
       initiatedBy,
       planApprovedBy: params.planApprovedBy ?? null,
@@ -471,6 +658,9 @@ export class TaskOrchestrator {
       diffFiles,
       threadUrl,
     });
+    const warningBlock = verified
+      ? ""
+      : `> ⚠️ Automated checks did not pass: ${failing.join(", ")}. Review before merge.\n\n`;
     let prNumber: number;
     let prUrl: string;
     if (params.iterate) {
@@ -483,7 +673,7 @@ export class TaskOrchestrator {
         branch,
         baseBranch,
         title: params.prompt.split("\n")[0]?.slice(0, 72) ?? branch,
-        body: `${params.prompt}\n\n${receipt}`,
+        body: `${warningBlock}${params.prompt}\n\n${receipt}`,
       });
       prNumber = pr.number;
       prUrl = pr.url;
@@ -492,8 +682,10 @@ export class TaskOrchestrator {
     const prCard = await thread.send({
       embeds: [
         new EmbedBuilder()
-          .setColor(0x57f287)
-          .setTitle(`🔀 PR #${prNumber} ready`)
+          .setColor(verified ? 0x57f287 : 0xfee75c)
+          .setTitle(
+            verified ? `🔀 PR #${prNumber} ready` : `🔀 PR #${prNumber} — checks failing, review`,
+          )
           .setURL(prUrl)
           .setDescription(truncateForDiscord(summary ?? params.prompt)),
       ],
@@ -528,12 +720,41 @@ export class TaskOrchestrator {
       },
     ).catch((err) => log.warn({ err }, "memory suggestion failed"));
 
-    return out("done", { pushed: true, prNumber, summary, diffFiles });
+    return out("done", {
+      pushed: true,
+      prNumber,
+      summary,
+      diffFiles,
+      verified,
+      ...(failing.length > 0 ? { failingChecks: failing } : {}),
+    });
   }
 
   /** Live task count for a guild (saturation checks — e.g. Repro Gate skips). */
   runningCount(guildId: string): number {
     return this.limiter.runningCount(guildId);
+  }
+
+  /** Look at a proposed plan without consuming it (TTL-bounded). */
+  peekPendingPlan(taskId: string): PendingPlan | undefined {
+    this.sweepPendingPlans();
+    return this.pendingPlans.get(taskId);
+  }
+
+  /** Claim a proposed plan (single-use, TTL-bounded) on an Implement click. */
+  takePendingPlan(taskId: string): PendingPlan | undefined {
+    this.sweepPendingPlans();
+    const plan = this.pendingPlans.get(taskId);
+    if (plan) this.pendingPlans.delete(taskId);
+    return plan;
+  }
+
+  /** Drop plans older than PLAN_VOTE_TTL_MINUTES so the map can't grow unbounded. */
+  private sweepPendingPlans(): void {
+    const cutoff = Date.now() - this.config.PLAN_VOTE_TTL_MINUTES * 60_000;
+    for (const [id, plan] of this.pendingPlans) {
+      if (plan.createdAt < cutoff) this.pendingPlans.delete(id);
+    }
   }
 
   /** Spectate: verbose progress for everyone watching the thread. One-way. */
@@ -556,13 +777,40 @@ export class TaskOrchestrator {
       .update(schema.tasks)
       .set({ status, finishedAt: new Date() })
       .where(eq(schema.tasks.id, task.taskId));
-    if (status !== "done")
+    if (status !== "done" && task.charged)
       await refundUsage(this.db, task.guildId, task.mode, task.fundedBy);
   }
 }
 
+/** Guards against a hung Docker daemon jamming a guild's task slot. */
+const WORKSPACE_START_TIMEOUT_MS = 30_000;
+
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: NodeJS.Timeout;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(label)), ms);
+  });
+  return Promise.race([p, timeout]).finally(() => clearTimeout(timer)) as Promise<T>;
+}
+
 function progressEmbed(description: string): EmbedBuilder {
   return new EmbedBuilder().setColor(0x5865f2).setDescription(description);
+}
+
+/** Implement / Dismiss buttons posted under a plan-mode proposal. */
+export function planApprovalButtons(
+  taskId: string,
+): ActionRowBuilder<ButtonBuilder> {
+  return new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`aw:planimpl:${taskId}`)
+      .setLabel("Approve & Implement ✅")
+      .setStyle(ButtonStyle.Success),
+    new ButtonBuilder()
+      .setCustomId(`aw:plandismiss:${taskId}`)
+      .setLabel("Dismiss")
+      .setStyle(ButtonStyle.Secondary),
+  );
 }
 
 /**

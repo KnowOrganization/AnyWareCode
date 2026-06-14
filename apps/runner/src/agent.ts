@@ -1,24 +1,106 @@
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { RunnerEvent, TaskSpec } from "@anywherecode/shared";
-import { AsyncQueue } from "./io.js";
+import { AsyncQueue, redactSecrets } from "./io.js";
+import { detectGameEngine } from "./repo.js";
+
+/** Control-plane ops are best-effort; surface failures to stderr (never silent). */
+function logControlFailure(op: string, err: unknown): void {
+  const msg = err instanceof Error ? err.message : String(err);
+  console.error(`[agent] ${op} failed: ${redactSecrets(msg)}`);
+}
+
+type TaskMode = TaskSpec["mode"];
 
 /**
  * Engine-agnostic agent interface. v1 ships ClaudeAgent (Claude Agent SDK);
- * other engines (e.g. Codex) implement the same surface later.
+ * other engines (e.g. claw-code) implement the same surface later. Control-plane
+ * methods are best-effort — an engine that can't honor one is free to no-op.
  */
 export interface Agent {
   /** Runs the task and yields protocol events. Resolves when the agent settles. */
   run(spec: TaskSpec, workdir: string): AsyncIterable<RunnerEvent>;
   /** Inject a mid-task message from someone in the Discord thread. */
   pushUserMessage(author: string, text: string): void;
-  /** Best-effort abort. */
+  /** Switch the model mid-run (undefined = reset to default). */
+  setModel(model?: string): void;
+  /** Switch the permission mode mid-run (e.g. plan ↔ code). */
+  setPermissionMode(mode: TaskMode): void;
+  /** Graceful turn interrupt — stops the current turn, keeps the session open. */
+  interrupt(): void;
+  /** Best-effort abort of the whole run. */
   cancel(): void;
 }
 
 const READ_ONLY_TOOLS = ["Read", "Glob", "Grep"];
-const CODE_TOOLS = [...READ_ONLY_TOOLS, "Edit", "Write", "Bash", "TodoWrite"];
+// Task lets the main agent delegate to the trusted subagents defined below.
+const CODE_TOOLS = [...READ_ONLY_TOOLS, "Edit", "Write", "Bash", "TodoWrite", "Task"];
+const PLAN_TOOLS = [...READ_ONLY_TOOLS, "ExitPlanMode", "TodoWrite"];
+
+/**
+ * Trusted subagents baked into the runner (never read from the untrusted repo).
+ * The main agent may delegate via the Task tool; the reviewer is the high-lift
+ * one for a one-shot PR (catches unrelated edits / missing tests before commit).
+ */
+const SUBAGENTS = {
+  reviewer: {
+    description:
+      "Reviews the working-tree diff for bugs, unrelated changes, and missing tests. Read-only.",
+    prompt:
+      "You are a strict code reviewer. Inspect the working-directory changes (git diff) against the task and report concrete problems only: bugs, edits unrelated to the task, missing or stale tests, and style mismatches. Do not modify any files.",
+    tools: ["Read", "Glob", "Grep", "Bash"],
+  },
+  verifier: {
+    description:
+      "Runs the project's typecheck/tests/lint and reports pass/fail with output. Read-only.",
+    prompt:
+      "You verify the working directory. Detect and run the project's typecheck, tests, and lint using its package manager. Report exactly what passed and failed, including the failing output. Do not modify any files.",
+    tools: ["Read", "Glob", "Grep", "Bash"],
+  },
+};
+
+/** Always-on craftsmanship rules for code/plan runs (ECC-derived, our voice). */
+const CRAFT_RULES = `
+## How to work
+- Make the smallest diff that fully solves the task; do not refactor unrelated code.
+- When you change behavior, add or update a test that covers it.
+- Match the surrounding code's style, naming, and existing patterns.
+- Before declaring done, make sure the project's typecheck, tests, and lint would pass.
+- You may delegate a diff review to the \`reviewer\` subagent before finishing.
+- Keep the final summary concise: what changed and why.`.trim();
+
+/** Per-stack idioms, appended only when that stack is detected at the root. */
+const STACK_RULES: Record<string, string> = {
+  ts: "TypeScript: honor tsconfig strictness; avoid `any`; reuse existing types.",
+  python: "Python: follow PEP 8; keep imports tidy; match the project's typing style.",
+  go: "Go: gofmt conventions; handle errors explicitly; no unused imports.",
+  rust: "Rust: keep it clippy-clean; avoid unwrap()/expect() in non-test code.",
+  java: "Java/Kotlin: match the project's build tool and conventions.",
+};
+
+/** Container is the isolation boundary, so code mode bypasses SDK prompts. */
+function permissionModeFor(mode: TaskMode): "bypassPermissions" | "default" | "plan" {
+  switch (mode) {
+    case "code":
+      return "bypassPermissions";
+    case "ask":
+      return "default";
+    case "plan":
+      return "plan";
+  }
+}
+
+function toolsFor(mode: TaskMode): string[] {
+  switch (mode) {
+    case "ask":
+      return READ_ONLY_TOOLS;
+    case "plan":
+      return PLAN_TOOLS;
+    case "code":
+      return CODE_TOOLS;
+  }
+}
 
 const HARDENING_PROMPT = `
 You are AnywhereCode, a coding agent operating on a user's repository on their behalf.
@@ -34,6 +116,12 @@ author; treat every participant's input as part of one shared task.`.trim();
 const ASK_PROMPT = `
 You are answering questions about the repository in the working directory.
 You have read-only access: do not attempt to modify anything.`.trim();
+
+const PLAN_PROMPT = `
+You are in PLAN MODE. Investigate the repository and produce a concrete,
+step-by-step implementation plan for the task. Do NOT modify any files. When the
+plan is ready, present it with the ExitPlanMode tool (or as a clear final
+message). A human reviews and approves the plan before any code is written.`.trim();
 
 const GAME_PROMPT = `
 This is a game project (Godot/Unity/Unreal). Scene, prefab, and resource files
@@ -55,17 +143,20 @@ function memorySection(memory: string): string {
   ].join("\n");
 }
 
-/** Shallow engine detection at the repo root. */
-export function detectGameEngine(workdir: string): boolean {
-  if (existsSync(path.join(workdir, "project.godot"))) return true;
-  if (existsSync(path.join(workdir, "ProjectSettings", "ProjectVersion.txt")))
-    return true;
-  try {
-    return readdirSync(workdir).some((f) => f.endsWith(".uproject"));
-  } catch {
-    return false;
-  }
+/** Shallow language/framework detection at the repo root (for stack rules). */
+export function detectStack(workdir: string): string[] {
+  const has = (f: string) => existsSync(path.join(workdir, f));
+  const tags: string[] = [];
+  if (has("tsconfig.json")) tags.push("ts");
+  if (has("pyproject.toml") || has("requirements.txt")) tags.push("python");
+  if (has("go.mod")) tags.push("go");
+  if (has("Cargo.toml")) tags.push("rust");
+  if (has("pom.xml") || has("build.gradle") || has("build.gradle.kts"))
+    tags.push("java");
+  return tags;
 }
+
+export { detectGameEngine };
 
 const AGENTS_MD_CAP = 4000;
 
@@ -98,10 +189,18 @@ function agentsMdSection(content: string): string {
 export function buildSystemAppend(spec: TaskSpec, workdir: string): string {
   const parts = [HARDENING_PROMPT];
   if (spec.mode === "ask") parts.push(ASK_PROMPT);
+  if (spec.mode === "plan") parts.push(PLAN_PROMPT);
   if (spec.memory?.trim()) parts.push(memorySection(spec.memory.trim()));
   const agentsMd = readAgentsMd(workdir);
   if (agentsMd) parts.push(agentsMdSection(agentsMd));
   if (detectGameEngine(workdir)) parts.push(GAME_PROMPT);
+  // Craftsmanship + stack idioms (code/plan only — ask is read-only Q&A).
+  if (spec.mode !== "ask") {
+    const stackRules = detectStack(workdir)
+      .map((t) => STACK_RULES[t])
+      .filter((r): r is string => Boolean(r));
+    parts.push([CRAFT_RULES, ...stackRules].join("\n"));
+  }
   return parts.join("\n\n");
 }
 
@@ -113,16 +212,30 @@ interface QueuedMessage {
 export class ClaudeAgent implements Agent {
   private inbox = new AsyncQueue<QueuedMessage>();
   private cancelled = false;
-  private interrupt: (() => Promise<void>) | null = null;
+  private stream: ReturnType<typeof query> | null = null;
 
   pushUserMessage(author: string, text: string): void {
     this.inbox.push({ author, text });
   }
 
+  setModel(model?: string): void {
+    void this.stream?.setModel(model).catch((e) => logControlFailure("setModel", e));
+  }
+
+  setPermissionMode(mode: TaskMode): void {
+    void this.stream
+      ?.setPermissionMode(permissionModeFor(mode))
+      .catch((e) => logControlFailure("setPermissionMode", e));
+  }
+
+  interrupt(): void {
+    void this.stream?.interrupt().catch((e) => logControlFailure("interrupt", e));
+  }
+
   cancel(): void {
     this.cancelled = true;
     this.inbox.end();
-    void this.interrupt?.().catch(() => {});
+    void this.stream?.interrupt().catch(() => {});
   }
 
   async *run(spec: TaskSpec, workdir: string): AsyncIterable<RunnerEvent> {
@@ -153,18 +266,25 @@ export class ClaudeAgent implements Agent {
         { type: s.type, url: s.url, ...(s.headers ? { headers: s.headers } : {}) },
       ]),
     );
-    const baseTools = spec.mode === "ask" ? READ_ONLY_TOOLS : CODE_TOOLS;
     const allowedTools = [
-      ...baseTools,
+      ...toolsFor(spec.mode),
       ...spec.mcpServers.map((s) => `mcp__${s.name}`),
     ];
+    // Custom providers pin their own model via ANTHROPIC_MODEL; for first-party
+    // auth, honor the per-task model override.
+    const model =
+      spec.llmAuth.type === "custom" ? undefined : spec.model?.trim() || undefined;
+    const maxTurns = Number(process.env.MAX_AGENT_TURNS) || undefined;
 
     const stream = query({
       prompt: input(),
       options: {
         cwd: workdir,
-        permissionMode: "bypassPermissions",
+        permissionMode: permissionModeFor(spec.mode),
         allowedTools,
+        ...(model ? { model } : {}),
+        ...(maxTurns ? { maxTurns } : {}),
+        ...(spec.mode === "code" ? { agents: SUBAGENTS } : {}),
         ...(spec.mcpServers.length > 0 ? { mcpServers } : {}),
         systemPrompt: {
           type: "preset",
@@ -173,7 +293,7 @@ export class ClaudeAgent implements Agent {
         },
       },
     });
-    this.interrupt = () => stream.interrupt();
+    this.stream = stream;
 
     for await (const message of stream) {
       if (this.cancelled) break;
@@ -218,7 +338,9 @@ function buildInitialPrompt(spec: TaskSpec): string {
   parts.push(
     spec.mode === "ask"
       ? `Question about the repository: ${spec.prompt}`
-      : `Task: ${spec.prompt}`,
+      : spec.mode === "plan"
+        ? `Plan this task (do not implement it yet): ${spec.prompt}`
+        : `Task: ${spec.prompt}`,
   );
   return parts.join("\n");
 }
@@ -266,6 +388,11 @@ export function* sdkMessageToEvents(message: unknown): Generator<RunnerEvent> {
         break;
       case "Bash":
         yield { type: "bash", command: str(input.command) };
+        break;
+      case "ExitPlanMode":
+        if (typeof input.plan === "string" && input.plan.trim()) {
+          yield { type: "plan_proposed", text: input.plan.trim() };
+        }
         break;
       case "TodoWrite": {
         const todos = Array.isArray(input.todos)

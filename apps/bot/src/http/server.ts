@@ -196,11 +196,14 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   return app;
 }
 
-/** Boot housekeeping: delivery ids only need to outlive GitHub's redelivery UI. */
+/**
+ * Boot housekeeping: keep delivery ids long enough to cover GitHub's full
+ * redelivery window (~5 days) so a late retry can't re-process as new. 7d margin.
+ */
 export async function pruneWebhookDeliveries(db: Db): Promise<void> {
   await db
     .delete(schema.webhookDeliveries)
     .where(
-      lt(schema.webhookDeliveries.receivedAt, new Date(Date.now() - 3 * 86_400_000)),
+      lt(schema.webhookDeliveries.receivedAt, new Date(Date.now() - 7 * 86_400_000)),
     );
 }

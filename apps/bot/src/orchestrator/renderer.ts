@@ -24,12 +24,17 @@ export function renderEventLine(
       return `💻 \`${truncate(event.command.replaceAll("`", "'"), verbose ? 600 : 180)}\``;
     case "tests":
       return `${event.passed ? "✅" : "❌"} ${truncate(event.summary, 200)}`;
+    case "check":
+      return `${event.passed ? "✅" : "❌"} ${event.name}: ${truncate(event.summary, 200)}`;
+    case "model_changed":
+      return `🔄 Model → \`${event.model}\``;
     case "pushed":
       return `🔀 Pushed \`${event.branch}\``;
     case "error":
       return `⚠️ ${truncate(event.message, 300)}`;
     case "assistant_text":
     case "diff_summary": // rendered as its own "What changed" embed
+    case "plan_proposed": // rendered as its own plan card with approve buttons
     case "done":
       return null;
   }

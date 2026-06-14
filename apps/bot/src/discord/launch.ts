@@ -254,6 +254,10 @@ export interface LaunchTaskRequest {
   requestedById?: string;
   /** Provenance: who approved the plan vote (omitted = instant mode). */
   planApprovedBy?: string;
+  /** Per-task model override (paid tiers; ignored for custom providers). */
+  model?: string;
+  /** Plan-first: run the agent in plan mode and post the plan for approval. */
+  planMode?: boolean;
   thread: ThreadStrategy;
   iterate?: { branch: string; prNumber: number; transcript: TranscriptEntry[] };
   /** Extra context injected as prior conversation (e.g. a PR diff for review). */
@@ -298,8 +302,11 @@ export async function launchTask(
     thread = (await client.channels.fetch(threadRaw.id)) as ThreadChannel;
   }
 
-  const fundedBy =
-    req.prefundedBy ?? (await bumpUsage(ctx.db, req.guildId, req.mode));
+  // Plan-mode runs are free; the unit is charged when "Approve & Implement" is
+  // clicked (which launches a normal code run through this same path).
+  const fundedBy = req.planMode
+    ? "plan"
+    : (req.prefundedBy ?? (await bumpUsage(ctx.db, req.guildId, req.mode)));
   const outcome = ctx.orchestrator
     .run({
       guildId: req.guildId,
@@ -313,6 +320,8 @@ export async function launchTask(
       fundedBy,
       ...(req.requestedById ? { requestedById: req.requestedById } : {}),
       ...(req.planApprovedBy ? { planApprovedBy: req.planApprovedBy } : {}),
+      ...(req.model ? { model: req.model } : {}),
+      ...(req.planMode ? { planMode: true } : {}),
       ...(req.taskId ? { taskId: req.taskId } : {}),
       ...(req.deferPr ? { deferPr: true } : {}),
       ...(req.iterate ? { iterate: req.iterate } : {}),

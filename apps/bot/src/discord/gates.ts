@@ -5,7 +5,7 @@ import {
   type APIInteractionGuildMember,
 } from "discord.js";
 import { eq } from "drizzle-orm";
-import { schema, type Db } from "@anywherecode/db";
+import { getPlan, schema, type Db } from "@anywherecode/db";
 import type { Guild } from "@anywherecode/db";
 import type { Config } from "../config.js";
 
@@ -54,6 +54,16 @@ export function resolveTier(guild: Guild): Tier {
 export function packSpendable(guild: Guild): boolean {
   const tier = resolveTier(guild);
   return tier.kind === "oss" || tier.kind === "paid";
+}
+
+/** Whether the guild's plan carries a machine feature flag (e.g. model_select). */
+export async function planHasFeature(
+  db: Db,
+  planId: string | null,
+  feature: string,
+): Promise<boolean> {
+  const plan = planId ? await getPlan(db, planId) : null;
+  return Boolean(plan?.features.includes(feature));
 }
 
 export function canInvoke(

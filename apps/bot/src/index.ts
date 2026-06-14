@@ -49,6 +49,18 @@ import { DockerWorkspace } from "./orchestrator/workspace.js";
 
 const config = loadConfig();
 initSentry(config.SENTRY_DSN, config.NODE_ENV);
+
+// Last-resort safety net: a stray rejection/exception must be logged + reported,
+// never swallowed. Keep running on a rejection; exit after an uncaught exception.
+process.on("unhandledRejection", (reason) => {
+  captureError(reason, { msg: "unhandledRejection" });
+});
+process.on("uncaughtException", (err) => {
+  captureError(err, { msg: "uncaughtException" });
+  log.error("uncaughtException — exiting");
+  process.exit(1);
+});
+
 const db = createDb(config.DATABASE_URL, config.DATABASE_SSL);
 
 // Run migrations on every boot (idempotent). Keeps DB schema in sync without

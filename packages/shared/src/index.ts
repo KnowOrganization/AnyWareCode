@@ -39,7 +39,34 @@ export const taskSpecSchema = z.object({
   /** Branch to fork from / open the PR against. */
   baseBranch: z.string(),
   prompt: z.string(),
-  mode: z.enum(["code", "ask"]),
+  mode: z.enum(["code", "ask", "plan"]),
+  /**
+   * Per-task model override (e.g. "claude-opus-4-8"). Empty = the runner's
+   * DEFAULT_MODEL. Ignored for `custom` providers, whose own model wins.
+   */
+  model: z.string().min(1).optional(),
+  /** Which agent engine the runner spawns. Default = the Claude Agent SDK. */
+  engine: z.enum(["claude", "claw"]).default("claude"),
+  /**
+   * Verification + self-repair config. Absent = runner auto-detects checks with
+   * no repair. `maxRepairAttempts` is tier-gated by the bot (0 = report only).
+   */
+  verify: z
+    .object({
+      enabled: z.boolean().default(true),
+      maxRepairAttempts: z.number().int().min(0).max(5).default(0),
+      /** Optional explicit command override (still allowlist-validated by the runner). */
+      commands: z
+        .array(
+          z.object({
+            name: z.string().regex(/^[a-z0-9-]+$/),
+            run: z.string().max(200),
+          }),
+        )
+        .max(6)
+        .optional(),
+    })
+    .optional(),
   /** Prior context (e.g. PR review comments when iterating). */
   transcript: z.array(transcriptEntrySchema).default([]),
   /** True when `branch` already exists on the remote (Iterate flow). */
@@ -86,6 +113,10 @@ export const hostMessageSchema = z.discriminatedUnion("type", [
     author: z.string(),
     text: z.string(),
   }),
+  /** Runtime control plane (streaming-input mode only). */
+  z.object({ type: z.literal("set_model"), model: z.string() }),
+  z.object({ type: z.literal("set_mode"), mode: z.enum(["code", "ask", "plan"]) }),
+  z.object({ type: z.literal("interrupt") }),
   z.object({ type: z.literal("cancel") }),
 ]);
 export type HostMessage = z.infer<typeof hostMessageSchema>;
@@ -100,6 +131,17 @@ export const runnerEventSchema = z.discriminatedUnion("type", [
     passed: z.boolean(),
     summary: z.string(),
   }),
+  /** Generic verification result (typecheck/test/lint/build/verify). */
+  z.object({
+    type: z.literal("check"),
+    name: z.string(),
+    passed: z.boolean(),
+    summary: z.string(),
+  }),
+  /** Plan-mode output: a proposed plan the host turns into approve buttons. */
+  z.object({ type: z.literal("plan_proposed"), text: z.string() }),
+  /** Echo of a runtime model switch. */
+  z.object({ type: z.literal("model_changed"), model: z.string() }),
   z.object({ type: z.literal("assistant_text"), text: z.string() }),
   z.object({ type: z.literal("pushed"), branch: z.string() }),
   /** Per-file change stats, emitted after a successful push. */

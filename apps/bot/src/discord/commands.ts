@@ -17,6 +17,23 @@ export const commands = [
         .setMinValue(2)
         .setMaxValue(5)
         .setRequired(false),
+    )
+    .addBooleanOption((opt) =>
+      opt
+        .setName("plan")
+        .setDescription("Plan first: propose a plan for approval before writing code")
+        .setRequired(false),
+    )
+    .addStringOption((opt) =>
+      opt
+        .setName("model")
+        .setDescription("Model to run (paid plans; BYO providers use their own)")
+        .setRequired(false)
+        .addChoices(
+          { name: "Opus 4.8 (most capable)", value: "claude-opus-4-8" },
+          { name: "Sonnet 4.6 (balanced)", value: "claude-sonnet-4-6" },
+          { name: "Haiku 4.5 (fastest)", value: "claude-haiku-4-5" },
+        ),
     ),
   new SlashCommandBuilder()
     .setName("ask")

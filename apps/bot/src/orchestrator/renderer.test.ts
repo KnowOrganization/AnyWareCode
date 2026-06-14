@@ -11,9 +11,22 @@ describe("renderEventLine", () => {
     ).toBe("🔀 Pushed `anywherecode/x`");
   });
 
-  it("excludes assistant text and done from the progress stream", () => {
+  it("excludes assistant text, done, and plan proposals from the progress stream", () => {
     expect(renderEventLine({ type: "assistant_text", text: "hi" })).toBeNull();
     expect(renderEventLine({ type: "done" })).toBeNull();
+    expect(renderEventLine({ type: "plan_proposed", text: "plan" })).toBeNull();
+  });
+
+  it("formats verification checks and model switches", () => {
+    expect(
+      renderEventLine({ type: "check", name: "typecheck", passed: false, summary: "3 errors" }),
+    ).toBe("❌ typecheck: 3 errors");
+    expect(
+      renderEventLine({ type: "check", name: "test", passed: true, summary: "passed" }),
+    ).toBe("✅ test: passed");
+    expect(
+      renderEventLine({ type: "model_changed", model: "claude-opus-4-8" }),
+    ).toBe("🔄 Model → `claude-opus-4-8`");
   });
 
   it("neutralizes backticks in bash commands", () => {
