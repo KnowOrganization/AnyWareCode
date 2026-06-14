@@ -1,19 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const authMock = vi.fn();
-vi.mock("@/auth", () => ({ auth: () => authMock() }));
+const getUser = vi.fn();
+vi.mock("@/lib/supabase/server", () => ({
+  createClient: async () => ({ auth: { getUser: () => getUser() } }),
+}));
 
-import {
-  AdminForbidden,
-  isAdminDiscordId,
-  isAdminRequest,
-  requireAdmin,
-} from "./admin";
+import { AdminForbidden, isAdminEmail, isAdminRequest, requireAdmin } from "./admin";
 
 afterEach(() => {
   vi.restoreAllMocks();
   delete process.env.ADMIN_API_SECRET;
-  delete process.env.ADMIN_DISCORD_IDS;
+  delete process.env.ADMIN_EMAILS;
 });
 
 function bearer(token: string): Request {
@@ -34,34 +31,43 @@ describe("isAdminRequest", () => {
   });
 });
 
-describe("isAdminDiscordId", () => {
-  it("matches the allowlist", () => {
-    process.env.ADMIN_DISCORD_IDS = "111, 222";
-    expect(isAdminDiscordId("111")).toBe(true);
-    expect(isAdminDiscordId("222")).toBe(true);
-    expect(isAdminDiscordId("333")).toBe(false);
-    expect(isAdminDiscordId(undefined)).toBe(false);
+describe("isAdminEmail", () => {
+  it("matches the allowlist case-insensitively", () => {
+    process.env.ADMIN_EMAILS = "Ops@x.com, boss@x.com";
+    expect(isAdminEmail("ops@x.com")).toBe(true);
+    expect(isAdminEmail("BOSS@x.com")).toBe(true);
+    expect(isAdminEmail("nope@x.com")).toBe(false);
+    expect(isAdminEmail(undefined)).toBe(false);
+  });
+  it("is fail-closed when the allowlist is empty", () => {
+    expect(isAdminEmail("anyone@x.com")).toBe(false);
   });
 });
 
 describe("requireAdmin", () => {
   it("accepts the bearer token (actor cli)", async () => {
     process.env.ADMIN_API_SECRET = "s3cret";
-    authMock.mockResolvedValue(null);
+    getUser.mockResolvedValue({ data: { user: null } });
     await expect(requireAdmin(bearer("s3cret"))).resolves.toEqual({
       actorId: "cli",
     });
   });
 
-  it("accepts an allowlisted Discord session", async () => {
-    process.env.ADMIN_DISCORD_IDS = "111";
-    authMock.mockResolvedValue({ discordId: "111" });
-    await expect(requireAdmin()).resolves.toEqual({ actorId: "111" });
+  it("accepts an allowlisted Supabase user", async () => {
+    process.env.ADMIN_EMAILS = "ops@x.com";
+    getUser.mockResolvedValue({ data: { user: { email: "ops@x.com" } } });
+    await expect(requireAdmin()).resolves.toEqual({ actorId: "ops@x.com" });
   });
 
-  it("throws AdminForbidden for a non-admin", async () => {
-    process.env.ADMIN_DISCORD_IDS = "111";
-    authMock.mockResolvedValue({ discordId: "999" });
+  it("throws AdminForbidden for a non-allowlisted user", async () => {
+    process.env.ADMIN_EMAILS = "ops@x.com";
+    getUser.mockResolvedValue({ data: { user: { email: "intruder@x.com" } } });
+    await expect(requireAdmin()).rejects.toBeInstanceOf(AdminForbidden);
+  });
+
+  it("throws AdminForbidden when nobody is signed in", async () => {
+    process.env.ADMIN_EMAILS = "ops@x.com";
+    getUser.mockResolvedValue({ data: { user: null } });
     await expect(requireAdmin()).rejects.toBeInstanceOf(AdminForbidden);
   });
 });

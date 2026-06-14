@@ -61,13 +61,15 @@ Five workspaces, **three processes**, one protocol:
 - `apps/web` — Next.js (deploy: Vercel). **There is no user-facing web app — users
   live entirely in Discord.** It hosts three things: (1) the **marketing landing**
   (`/`) + `/legal/*`; (2) the **company admin panel** (`/admin/**` + `/api/admin/**`),
-  Discord-OAuth gated via `ADMIN_DISCORD_IDS`/`ADMIN_API_SECRET` (`lib/admin.ts`),
-  for managing servers/tiers/packs/OSS/payments/audit; (3) **headless billing** — the
+  gated by **Supabase Auth (email/password only, no social, no signup)** + an
+  `ADMIN_EMAILS` allowlist, OR the `ADMIN_API_SECRET` bearer for CLI (`lib/admin.ts`,
+  `requireAdmin`); sign-in at `/login`, accounts provisioned in the Supabase dashboard.
+  Manages servers/tiers/packs/OSS/payments/audit; (3) **headless billing** — the
   **only Razorpay write surface** `/api/razorpay/webhook` (dual-currency USD+INR by
   geo), plus no-login pay-redirects `/pay/<guildId>/sub|pack` (302 → Razorpay hosted
   page) that the bot links to from `/billing`, and `/api/billing/cancel` (shared-secret
-  `BILLING_BRIDGE_SECRET` bearer, called by the bot's Cancel button). Auth.js now
-  serves the admin panel only. The bot only *reads* the guild billing columns.
+  `BILLING_BRIDGE_SECRET` bearer, called by the bot's Cancel button). The bot only
+  *reads* the guild billing columns.
 
 **Request flow** (`/code` → PR):
 1. `discord/interactions.ts` validates perms/cap/repo, opens a thread, calls

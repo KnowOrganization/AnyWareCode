@@ -1,5 +1,5 @@
 import { timingSafeEqual } from "node:crypto";
-import { auth } from "@/auth";
+import { createClient } from "@/lib/supabase/server";
 
 /** Bearer-token check for operator admin routes. Unset secret = all denied. */
 export function isAdminRequest(req: Request): boolean {
@@ -12,18 +12,20 @@ export function isAdminRequest(req: Request): boolean {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-/** CSV of Discord user ids allowed into the admin panel. Unset = nobody. */
-export function adminDiscordIds(): Set<string> {
+/** CSV of email addresses allowed into the admin panel. Unset = nobody (the
+ * panel is fail-closed; signups are disabled in Supabase so accounts only
+ * exist if we create them, but the allowlist is a second gate). */
+export function adminEmails(): Set<string> {
   return new Set(
-    (process.env.ADMIN_DISCORD_IDS ?? "")
+    (process.env.ADMIN_EMAILS ?? "")
       .split(",")
-      .map((s) => s.trim())
+      .map((s) => s.trim().toLowerCase())
       .filter(Boolean),
   );
 }
 
-export function isAdminDiscordId(id: string | undefined | null): boolean {
-  return Boolean(id) && adminDiscordIds().has(id as string);
+export function isAdminEmail(email: string | undefined | null): boolean {
+  return Boolean(email) && adminEmails().has((email as string).toLowerCase());
 }
 
 export class AdminForbidden extends Error {
@@ -35,15 +37,16 @@ export class AdminForbidden extends Error {
 
 /**
  * Gate for admin UI pages and /api/admin/* routes. Accepts either the bearer
- * token (programmatic/CLI → actor "cli") OR a logged-in Discord session whose
- * id is in ADMIN_DISCORD_IDS. Throws AdminForbidden otherwise. Pass `req` to
+ * token (programmatic/CLI → actor "cli") OR a Supabase-authenticated user whose
+ * email is in ADMIN_EMAILS. Throws AdminForbidden otherwise. Pass `req` to
  * enable the bearer path; omit it for UI pages (session only).
  */
 export async function requireAdmin(req?: Request): Promise<{ actorId: string }> {
   if (req && isAdminRequest(req)) return { actorId: "cli" };
-  const session = await auth();
-  if (isAdminDiscordId(session?.discordId)) {
-    return { actorId: session!.discordId! };
-  }
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (isAdminEmail(user?.email)) return { actorId: user!.email! };
   throw new AdminForbidden();
 }

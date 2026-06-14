@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { requireAdmin } from "@/lib/admin";
 import { PageShell } from "@/components/PageShell";
 import { Container } from "@/components/ui/Container";
+import { SignOutButton } from "./SignOutButton";
 
 const NAV = [
   { href: "/admin", label: "Dashboard" },
@@ -19,8 +20,8 @@ export default async function AdminLayout({ children }: { children: ReactNode })
   try {
     await requireAdmin();
   } catch {
-    // Operators only; there is no user web. Bounce to Discord OAuth sign-in.
-    redirect("/api/auth/signin?callbackUrl=/admin");
+    // Operators only. Bounce to the email/password sign-in.
+    redirect("/login");
   }
   return (
     <PageShell>
@@ -36,6 +37,7 @@ export default async function AdminLayout({ children }: { children: ReactNode })
               {n.label}
             </Link>
           ))}
+          <SignOutButton />
         </div>
         {children}
       </Container>

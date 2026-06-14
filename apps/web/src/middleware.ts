@@ -2,31 +2,27 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 /**
- * Coarse pre-lambda guard: bounce un-authed requests off the admin surface
- * before they hit a node route. The authoritative allowlist check (requireAdmin)
- * still runs in the admin layout + every /api/admin mutation — this is only a
- * cheap "is there a session cookie at all" filter. Auth.js sets one of these
- * cookies on login.
+ * Coarse pre-lambda guard for the admin surface: is there a Supabase auth cookie
+ * at all? Bearer-token (CLI) requests pass through to the route. The AUTHORITATIVE
+ * check — validate the Supabase JWT + the ADMIN_EMAILS allowlist — runs in the
+ * admin layout (requireAdmin) and every /api/admin mutation, so a stale/forged
+ * cookie still gets rejected there. Kept dependency-free so it stays on the Edge
+ * runtime without pulling in supabase-js.
  */
 export function middleware(req: NextRequest) {
-  // Bearer-token (CLI/programmatic) requests carry no session cookie — let them
-  // through to the route, where requireAdmin/isAdminRequest validates the token.
+  // Bearer (CLI/programmatic) → let the route validate the secret.
   if (req.headers.get("authorization")?.startsWith("Bearer ")) {
     return NextResponse.next();
   }
-  const hasSession =
-    req.cookies.has("authjs.session-token") ||
-    req.cookies.has("__Secure-authjs.session-token");
+  const hasSession = req.cookies
+    .getAll()
+    .some((c) => /^sb-.*-auth-token/.test(c.name));
   if (hasSession) return NextResponse.next();
 
-  const { pathname } = req.nextUrl;
-  if (pathname.startsWith("/api/admin")) {
+  if (req.nextUrl.pathname.startsWith("/api/admin")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  // UI: send to the Discord OAuth sign-in (operators only; there is no user web).
-  const signIn = new URL("/api/auth/signin", req.url);
-  signIn.searchParams.set("callbackUrl", pathname);
-  return NextResponse.redirect(signIn);
+  return NextResponse.redirect(new URL("/login", req.url));
 }
 
 export const config = {
