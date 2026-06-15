@@ -88,8 +88,12 @@ const configSchema = z.object({
   WEB_URL: z.string().default(""),
   /** Shared secret bridging bot↔web for billing: signs the Job-Pack attribution
    * token and authenticates the bot's cancel call. Set the SAME value in the web
-   * app. Unset = pack buttons are unattributed + the cancel button is hidden. */
-  BILLING_BRIDGE_SECRET: z.string().min(16).optional(),
+   * app. Unset/empty = pack buttons are unattributed + the cancel button is hidden. */
+  BILLING_BRIDGE_SECRET: z
+    .string()
+    .min(16)
+    .optional()
+    .or(z.literal("").transform(() => undefined)),
   /** Which runner engine to use. "claude" = Claude Agent SDK (default). */
   RUNNER_ENGINE: z.enum(["claude", "claw"]).default("claude"),
   /** Model used when a task doesn't request one (BYO providers use their own). */

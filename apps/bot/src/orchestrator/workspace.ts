@@ -37,6 +37,21 @@ export class DockerWorkspace implements Workspace {
     spec: TaskSpec,
     env: Record<string, string>,
   ): Promise<WorkspaceHandle> {
+    try {
+      await this.docker.ping();
+    } catch {
+      throw new Error(
+        "Docker daemon not reachable — is Docker Desktop running?",
+      );
+    }
+    const images = await this.docker.listImages({
+      filters: JSON.stringify({ reference: [this.config.RUNNER_IMAGE] }),
+    });
+    if (images.length === 0) {
+      throw new Error(
+        `Runner image "${this.config.RUNNER_IMAGE}" not found — rebuild with: docker compose up -d --build`,
+      );
+    }
     const container = await this.docker.createContainer({
       Image: this.config.RUNNER_IMAGE,
       Env: Object.entries(env).map(([k, v]) => `${k}=${v}`),

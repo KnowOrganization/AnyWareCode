@@ -77,18 +77,19 @@ export async function handleInteraction(
   } catch (err) {
     captureError(err, { msg: "interaction failed" });
     if (
-      (interaction.isChatInputCommand() ||
-        interaction.isButton() ||
-        interaction.isModalSubmit()) &&
-      !interaction.replied &&
-      !interaction.deferred
+      interaction.isChatInputCommand() ||
+      interaction.isButton() ||
+      interaction.isModalSubmit()
     ) {
-      await interaction
-        .reply({
-          content: "⚠️ Something went wrong handling that.",
-          flags: MessageFlags.Ephemeral,
-        })
-        .catch(() => {});
+      const content = "⚠️ Something went wrong handling that.";
+      if (interaction.deferred && !interaction.replied) {
+        // Already acked — edit the spinner so it doesn't hang.
+        await interaction.editReply({ content }).catch(() => {});
+      } else if (!interaction.replied && !interaction.deferred) {
+        await interaction
+          .reply({ content, flags: MessageFlags.Ephemeral })
+          .catch(() => {});
+      }
     }
   }
 }
@@ -161,6 +162,9 @@ async function startAgentTask(
     }
     commandCooldown.set(key, now);
   }
+  // Ack within Discord's 3s window — the preconditions below hit a remote DB +
+  // GitHub and can exceed it, which would invalidate the interaction (10062).
+  await interaction.deferReply();
   const prompt = interaction.options.getString(
     mode === "code" ? "task" : "question",
     true,
@@ -178,16 +182,12 @@ async function startAgentTask(
     prompt,
   );
   if (!pre.ok) {
-    await interaction.reply({
-      content: pre.reason,
-      flags: MessageFlags.Ephemeral,
-    });
+    await interaction.editReply({ content: pre.reason });
     return;
   }
   if (interaction.channel?.isThread()) {
-    await interaction.reply({
+    await interaction.editReply({
       content: "Run this in a regular text channel; I'll open a thread there.",
-      flags: MessageFlags.Ephemeral,
     });
     return;
   }
@@ -198,17 +198,15 @@ async function startAgentTask(
     mode === "code" ? interaction.options.getString("model") : null;
   if (requestedModel) {
     if (!(await planHasFeature(ctx.db, guild.planId, "model_select"))) {
-      await interaction.reply({
+      await interaction.editReply({
         content: "Model selection isn't enabled for this server's plan.",
-        flags: MessageFlags.Ephemeral,
       });
       return;
     }
     const allow = ctx.config.modelAllowlist;
     if (allow.length > 0 && !allow.includes(requestedModel)) {
-      await interaction.reply({
+      await interaction.editReply({
         content: `That model isn't available here. Allowed: ${allow.join(", ")}.`,
-        flags: MessageFlags.Ephemeral,
       });
       return;
     }
@@ -219,12 +217,11 @@ async function startAgentTask(
     mode === "code" && !planNow ? interaction.options.getInteger("squad") : null;
   if (squadN !== null && squadN !== undefined) {
     if (squadN > ctx.config.SQUAD_MAX || !(await squadAllowed(ctx, guild.planId))) {
-      await interaction.reply({
+      await interaction.editReply({
         content:
           squadN > ctx.config.SQUAD_MAX
             ? `Squads cap at ${ctx.config.SQUAD_MAX} attempts on this bot.`
             : "Squad Mode isn't enabled for this server's plan.",
-        flags: MessageFlags.Ephemeral,
       });
       return;
     }
@@ -245,7 +242,7 @@ async function startAgentTask(
         : truncate(prompt.split("\n")[0] ?? prompt, 80),
     });
     if (decision.kind === "vote") {
-      await interaction.reply({
+      await interaction.editReply({
         content: decision.card.content ?? "",
         components: decision.card.components ?? [],
         allowedMentions: { parse: [] },
@@ -257,7 +254,7 @@ async function startAgentTask(
   }
 
   if (squadN) {
-    await interaction.reply(
+    await interaction.editReply(
       `⚔️ **${pre.repoFullName}** — squad ×${squadN}: ${truncate(prompt, 140)}`,
     );
     const result = await launchSquad(ctx, {
@@ -280,7 +277,7 @@ async function startAgentTask(
   }
 
   const emoji = planNow ? "📋" : mode === "code" ? "🧵" : "💬";
-  await interaction.reply(
+  await interaction.editReply(
     `${emoji} **${pre.repoFullName}** — ${truncate(prompt, 160)}`,
   );
   const reply = await interaction.fetchReply();

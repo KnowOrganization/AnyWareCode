@@ -411,8 +411,10 @@ export class TaskOrchestrator {
     } catch (err) {
       captureError(err, { msg: "workspace start failed", taskId });
       await this.settle(task, "failed");
+      const detail =
+        err instanceof Error && err.message ? `\n> ${err.message}` : "";
       await thread.send(
-        "⚠️ Couldn't start the task container (the host may be busy). Try again shortly.",
+        `⚠️ Couldn't start the task container.${detail}`,
       );
       return out("failed");
     }

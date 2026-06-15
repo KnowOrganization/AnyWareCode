@@ -105,6 +105,11 @@ client.on(Events.ClientReady, async (ready) => {
 
   // Kill any containers left over from before the restart, then mark their
   // tasks failed and refund quota. Notifications require the Discord client.
+  if (!(await pingDocker())) {
+    log.error(
+      "Docker daemon not reachable — runner tasks will fail until Docker is running",
+    );
+  }
   await killStaleContainers();
   await recoverStaleTasks(db, async (threadId, message) => {
     const ch = await ready.channels.fetch(threadId).catch(() => null);
