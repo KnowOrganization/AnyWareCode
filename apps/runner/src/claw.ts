@@ -44,7 +44,9 @@ export class ClawAgent implements Agent {
     // If a claw build exposes a system-prompt flag, also pass it natively.
     if (process.env.CLAW_SYSTEM_FLAG) args.push(process.env.CLAW_SYSTEM_FLAG, system);
     args.push(prompt);
-    const child = spawn(bin, args, {
+    // Annotate to the base ChildProcess: under some @types/node resolutions the
+    // ChildProcessWithoutNullStreams subtype loses its EventEmitter merge (.on).
+    const child: ChildProcess = spawn(bin, args, {
       cwd: workdir,
       env: process.env,
     });
