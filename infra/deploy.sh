@@ -15,6 +15,7 @@ rsync -az --delete \
   -e "ssh -i $KEY -o StrictHostKeyChecking=accept-new" \
   --exclude node_modules --exclude '.git' --exclude 'dist' \
   --exclude '**/dist' --exclude '.turbo' --exclude '**/.next' \
+  --exclude '.env' --exclude '.env.tunnel' --exclude '.env.local' \
   "$SRC" "$DEST"
 
 ssh -i "$KEY" -o StrictHostKeyChecking=accept-new "$USER_HOST" \

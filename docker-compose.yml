@@ -2,28 +2,34 @@ services:
   # Only way out of the runner network. Runners get HTTPS_PROXY pointed here;
   # the filter file allowlists Anthropic + GitHub and nothing else.
   egress-proxy:
+    image: ${REGISTRY:-ghcr.io/knoworganization}/anywarecode-egress-proxy:latest
     build: infra/egress-proxy
     networks:
       - default
       - runner-egress
 
-  # One-shot service: builds the runner image so `docker compose up -d --build`
-  # ships both bot and runner atomically from the same checkout.
+  # Holds the runner image. CI builds+pushes it; the box `compose pull`s it so
+  # the tag is present locally for the bot to launch task containers from.
   runner-image:
+    image: ${REGISTRY:-ghcr.io/knoworganization}/anywarecode-runner:latest
     build:
       context: .
       dockerfile: apps/runner/Dockerfile
-    image: anywarecode-runner
     entrypoint: ["true"]
 
   bot:
+    image: ${REGISTRY:-ghcr.io/knoworganization}/anywarecode-bot:latest
     build:
       context: .
       dockerfile: apps/bot/Dockerfile
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     environment:
       RUNNER_NETWORK: anywarecode-egress
       RUNNER_HTTPS_PROXY: http://egress-proxy:8888
+      # Must match the runner-image tag above so the bot finds the pulled image.
+      RUNNER_IMAGE: ${REGISTRY:-ghcr.io/knoworganization}/anywarecode-runner:latest
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     ports:
