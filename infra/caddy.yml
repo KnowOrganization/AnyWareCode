@@ -1,0 +1,19 @@
+# Compose override: front the bot with Caddy (auto Let's Encrypt TLS).
+# Usage: docker compose -f docker-compose.yml -f infra/caddy.yml up -d --build
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infra/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - bot
+
+volumes:
+  caddy_data:
+  caddy_config:

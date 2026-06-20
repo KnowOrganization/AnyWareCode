@@ -6,3 +6,4 @@ dist/
 .DS_Store
 drizzle/meta/_journal.json.bak
 .next
+.env.tunnel

@@ -11,6 +11,8 @@ COPY tsconfig.base.json ./
 COPY packages/shared packages/shared
 COPY packages/db packages/db
 COPY apps/bot apps/bot
+# Low-RAM hosts (1GB): raise V8 heap so tsc spills to swap instead of aborting (SIGABRT 134).
+ENV NODE_OPTIONS=--max-old-space-size=2048
 RUN pnpm --filter @anywarecode/shared build \
   && pnpm --filter @anywarecode/db build \
   && pnpm --filter @anywarecode/bot build
