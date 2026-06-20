@@ -8,21 +8,45 @@ export class GuildTaskLimiter {
   private running = new Map<string, number>();
   private waiting = new Map<
     string,
-    Array<{ resolve: () => void; limit: number }>
+    Array<{ resolve: () => void; reject: (err: unknown) => void; limit: number }>
   >();
 
-  /** Resolves when a slot is free. Returns true if the task had to queue. */
-  async acquire(guildId: string, limit = 1): Promise<{ queued: boolean }> {
+  /**
+   * Resolves when a slot is free. Returns true if the task had to queue.
+   * Pass an AbortSignal to unblock early on cancel — the returned Promise
+   * rejects with an Error so the caller can distinguish abort from a crash.
+   */
+  async acquire(
+    guildId: string,
+    limit = 1,
+    signal?: AbortSignal,
+  ): Promise<{ queued: boolean }> {
     const max = Math.max(1, limit);
     const current = this.running.get(guildId) ?? 0;
     if (current < max) {
       this.running.set(guildId, current + 1);
       return { queued: false };
     }
-    await new Promise<void>((resolve) => {
+    await new Promise<void>((resolve, reject) => {
+      // Already aborted before we even queued.
+      if (signal?.aborted) {
+        reject(new Error("Task cancelled while queued."));
+        return;
+      }
       const queue = this.waiting.get(guildId) ?? [];
-      queue.push({ resolve, limit: max });
+      const entry = { resolve, reject, limit: max };
+      queue.push(entry);
       this.waiting.set(guildId, queue);
+      signal?.addEventListener(
+        "abort",
+        () => {
+          const q = this.waiting.get(guildId);
+          const i = q?.indexOf(entry) ?? -1;
+          if (i >= 0) q!.splice(i, 1);
+          reject(new Error("Task cancelled while queued."));
+        },
+        { once: true },
+      );
     });
     this.running.set(guildId, (this.running.get(guildId) ?? 0) + 1);
     return { queued: true };

@@ -4,6 +4,7 @@ import { schema } from "@anywarecode/db";
 import type { Task } from "@anywarecode/db";
 import {
   classifyIntent,
+  generateChatReply,
   type ChatContext,
   type HistoryMessage,
   type IntentDecision,
@@ -171,6 +172,22 @@ export async function handleMention(
       ctx.config.CHAT_MODEL,
       chatCtx,
     );
+
+    // "reply" gets a full detailed answer from a capable model — the cheap
+    // classifier only decides the action; the actual answer is generated here
+    // with a higher token budget and a depth-focused system prompt.
+    if (decision.action === "reply") {
+      const text = await generateChatReply(
+        llm.auth,
+        ctx.config.DEFAULT_MODEL,
+        chatCtx,
+      );
+      for (const chunk of chunkText(text, 1900)) {
+        await reply(message, chunk);
+      }
+      return;
+    }
+
     await actOnDecision(ctx, message, decision, {
       guild,
       repoChannelId,
@@ -199,11 +216,8 @@ async function actOnDecision(
     threadTask: Task | null;
   },
 ): Promise<void> {
-  if (decision.action === "reply") {
-    await reply(message, truncate(decision.reply_text ?? "…", 2000));
-    return;
-  }
-
+  // "reply" is handled before this call; guard here so TS narrows the union.
+  if (decision.action === "reply") return;
   const prompt = decision.task_prompt ?? "";
   const summary = decision.task_summary ?? truncate(prompt, 80);
 
@@ -422,4 +436,13 @@ function startTyping(message: Message<true>): { stop: () => void } {
   send();
   const interval = setInterval(send, 8000);
   return { stop: () => clearInterval(interval) };
+}
+
+function chunkText(text: string, max: number): string[] {
+  if (text.length <= max) return [text];
+  const chunks: string[] = [];
+  for (let i = 0; i < text.length; i += max) {
+    chunks.push(text.slice(i, i + max));
+  }
+  return chunks;
 }

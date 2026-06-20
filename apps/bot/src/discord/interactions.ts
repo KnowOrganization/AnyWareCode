@@ -282,7 +282,7 @@ async function startAgentTask(
   );
   const reply = await interaction.fetchReply();
   const namePrefix = planNow ? "plan" : mode === "code" ? "code" : "ask";
-  await launchTask(ctx, {
+  const launched = await launchTask(ctx, {
     guildId,
     installationId: pre.installationId,
     repoFullName: pre.repoFullName,
@@ -301,6 +301,10 @@ async function startAgentTask(
       name: `${namePrefix}: ${prompt}`,
     },
   });
+  // Observe the outcome promise so an unhandled rejection never silently drops.
+  void launched.outcome.catch((err) =>
+    captureError(err, { msg: "code task outcome rejected", channelId: interaction.channelId }),
+  );
 }
 
 const repoCache = new Map<number, { repos: string[]; fetchedAt: number }>();

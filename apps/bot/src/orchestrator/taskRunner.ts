@@ -4,6 +4,7 @@ import {
   ButtonBuilder,
   ButtonStyle,
   EmbedBuilder,
+  type Message,
   type ThreadChannel,
 } from "discord.js";
 import { and, eq } from "drizzle-orm";
@@ -100,6 +101,8 @@ interface ActiveTask {
   modelSelectAllowed: boolean;
   /** False for plan-mode runs (free) so a failure never refunds a non-charge. */
   charged: boolean;
+  /** Aborts a queued acquire() when the task is cancelled before it starts. */
+  abort: AbortController;
 }
 
 /** A plan-mode result awaiting an Implement click (in-memory, like active tasks). */
@@ -177,6 +180,8 @@ export class TaskOrchestrator {
     const task = this.active.get(threadId);
     if (!task || task.terminalReason) return false;
     task.terminalReason = "cancel";
+    // Unblocks acquire() immediately if the task is still waiting for a slot.
+    task.abort.abort();
     task.handle?.send({ type: "cancel" });
     await task.handle?.kill();
     return true;
@@ -223,6 +228,7 @@ export class TaskOrchestrator {
       llmSource: null,
       modelSelectAllowed: false,
       charged: !params.planMode,
+      abort: new AbortController(),
     };
     this.active.set(params.thread.id, task);
 
@@ -235,9 +241,15 @@ export class TaskOrchestrator {
         `⏳ Queued — ${this.limiter.runningCount(params.guildId)}/${limit} task slots in use…`,
       );
     }
-    await this.limiter.acquire(params.guildId, limit);
 
+    // Track whether acquire() resolved so the finally block knows whether to
+    // release (it must NOT release if we were aborted while queued — the slot
+    // counter was never incremented in that path).
+    let acquired = false;
     try {
+      await this.limiter.acquire(params.guildId, limit, task.abort.signal);
+      acquired = true;
+
       if (task.terminalReason === "cancel") {
         await this.settle(task, "cancelled");
         await params.thread.send("🛑 Task cancelled before it started.");
@@ -252,6 +264,21 @@ export class TaskOrchestrator {
       }
       return await this.execute(task, branch, baseBranch, params);
     } catch (err) {
+      if (!acquired) {
+        // acquire() was aborted — task cancelled while queued, slot never taken.
+        await this.settle(task, "cancelled").catch(() => {});
+        await params.thread
+          .send("🛑 Task cancelled while queued.")
+          .catch(() => {});
+        return {
+          taskId,
+          status: "cancelled",
+          pushed: false,
+          branch,
+          prNumber: null,
+          diffFiles: [],
+        };
+      }
       // An unexpected throw (GitHub/Discord/DB) must still settle the task —
       // otherwise the row is stuck "running" and quota isn't refunded until the
       // next boot's recovery sweep. Idempotent with that sweep.
@@ -271,7 +298,7 @@ export class TaskOrchestrator {
         diffFiles: [],
       };
     } finally {
-      this.limiter.release(params.guildId);
+      if (acquired) this.limiter.release(params.guildId);
       this.active.delete(params.thread.id);
     }
   }
@@ -439,22 +466,36 @@ export class TaskOrchestrator {
       timeoutMinutes * 60 * 1000,
     );
 
-    const progressMessage = await thread.send({
-      embeds: [progressEmbed("🧠 Starting…")],
-      components: [
-        new ActionRowBuilder<ButtonBuilder>().addComponents(
-          new ButtonBuilder()
-            .setCustomId(`aw:spectate:${taskId}`)
-            .setLabel("Spectate 👁")
-            .setStyle(ButtonStyle.Secondary),
-        ),
-      ],
-    });
+    let progressMessage: Message;
+    try {
+      progressMessage = await thread.send({
+        embeds: [progressEmbed("🧠 Starting…")],
+        components: [
+          new ActionRowBuilder<ButtonBuilder>().addComponents(
+            new ButtonBuilder()
+              .setCustomId(`aw:spectate:${taskId}`)
+              .setLabel("Spectate 👁")
+              .setStyle(ButtonStyle.Secondary),
+          ),
+        ],
+      });
+    } catch (err) {
+      captureError(err, { msg: "progress message send failed", taskId });
+      await this.settle(task, "failed");
+      await thread
+        .send("⚠️ Couldn't post the progress message — the task was aborted.")
+        .catch(() => {});
+      return out("failed");
+    }
     const renderer = new ProgressRenderer();
     task.renderer = renderer;
-    const updater = new ThrottledUpdater(async () => {
-      await progressMessage.edit({ embeds: [progressEmbed(renderer.render())] });
-    });
+    const updater = new ThrottledUpdater(
+      async () => {
+        await progressMessage.edit({ embeds: [progressEmbed(renderer.render())] });
+      },
+      2000,
+      (err) => captureError(err, { msg: "progress edit failed", taskId }),
+    );
 
     let pushed = false;
     let errorMessage: string | null = null;
@@ -467,12 +508,19 @@ export class TaskOrchestrator {
     // failed (a repair turn that fixes it removes it from the set).
     const failingChecks = new Set<string>();
     let checksRan = false;
+    // Tracks whether the runner emitted a "done" event. Protocol guarantees one
+    // on every clean exit; absence means crash/OOM/stale-image — NOT success.
+    let sawDone = false;
 
     try {
       for await (const event of handle.events) {
         if (event.type === "assistant_text") {
           for (const chunk of chunkText(event.text, 2000)) {
-            await thread.send(chunk);
+            // Best-effort: a transient Discord send failure must not abort the
+            // run loop — protocol events (pushed, done, error) still need to flow.
+            await thread.send(chunk).catch((err) =>
+              captureError(err, { msg: "assistant_text send failed", taskId }),
+            );
           }
           continue;
         }
@@ -490,7 +538,10 @@ export class TaskOrchestrator {
         }
         if (event.type === "plan_proposed") planText = event.text;
         if (event.type === "error") errorMessage = event.message;
-        if (event.type === "done") summary = event.summary;
+        if (event.type === "done") {
+          summary = event.summary;
+          sawDone = true;
+        }
         if (renderer.add(event)) updater.schedule();
       }
     } finally {
@@ -498,6 +549,17 @@ export class TaskOrchestrator {
       await updater.flush();
       // Run over — retire the Spectate button.
       await progressMessage.edit({ components: [] }).catch(() => {});
+    }
+
+    // If the event stream closed without a "done" event (container crash, OOM,
+    // stale image), treat it as failure — never let it fall through to the
+    // "finished without changes" success branch.
+    if (!sawDone && !errorMessage && !this.reasonOf(task)) {
+      await this.settle(task, "failed");
+      await thread.send(
+        "⚠️ The agent stopped unexpectedly (the container exited without finishing). Nothing was pushed.",
+      );
+      return out("failed");
     }
 
     const stopped = this.reasonOf(task);
@@ -619,7 +681,7 @@ export class TaskOrchestrator {
       return out("done", { pushed: true, summary, diffFiles });
     }
 
-    if (!pushed) {
+    if (sawDone && !pushed) {
       await this.settle(task, "done");
       await thread.send(
         summary

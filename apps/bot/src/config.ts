@@ -112,11 +112,11 @@ const configSchema = z.object({
   /** Repair attempts after a failed check (all tiers; 0 disables repair). */
   VERIFY_MAX_REPAIR_ATTEMPTS: z.coerce.number().int().min(0).max(5).default(2),
   /** Share of remaining wall-clock reserved for verify+repair (0..1). */
-  VERIFY_RESERVE_FRACTION: z.coerce.number().min(0).max(0.9).default(0.25),
+  VERIFY_RESERVE_FRACTION: z.coerce.number().min(0).max(0.9).default(0.30),
   /** Stronger model used for repair turns (escalation); empty = no escalation. */
   VERIFY_REPAIR_MODEL: z.string().default("claude-opus-4-8"),
   /** Escalate to VERIFY_REPAIR_MODEL only after this many failed repairs (0 = first repair). */
-  VERIFY_ESCALATE_AFTER: z.coerce.number().int().min(0).max(5).default(1),
+  VERIFY_ESCALATE_AFTER: z.coerce.number().int().min(0).max(5).default(0),
   /** Per-user cooldown between task-launching commands, in seconds (abuse damping). */
   COMMAND_COOLDOWN_SECONDS: z.coerce.number().int().min(0).default(5),
 });

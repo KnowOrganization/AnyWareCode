@@ -87,6 +87,8 @@ export class ThrottledUpdater {
   constructor(
     private update: () => Promise<void>,
     private intervalMs = 2000,
+    /** Optional observer for edit failures (rate limits, deleted message are non-fatal). */
+    private onError?: (err: unknown) => void,
   ) {}
 
   schedule(): void {
@@ -105,8 +107,9 @@ export class ThrottledUpdater {
     this.inFlight = true;
     try {
       await this.update();
-    } catch {
+    } catch (err) {
       // Discord edit failures (rate limits, deleted message) are non-fatal.
+      this.onError?.(err);
     } finally {
       this.inFlight = false;
       if (this.dirty) this.schedule();

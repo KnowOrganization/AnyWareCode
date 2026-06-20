@@ -63,11 +63,12 @@ const SUBAGENTS = {
 /** Always-on craftsmanship rules for code/plan runs (ECC-derived, our voice). */
 const CRAFT_RULES = `
 ## How to work
+- Explore the relevant files and form a brief plan before editing; make the smallest correct change.
 - Make the smallest diff that fully solves the task; do not refactor unrelated code.
 - When you change behavior, add or update a test that covers it.
 - Match the surrounding code's style, naming, and existing patterns.
 - Before declaring done, make sure the project's typecheck, tests, and lint would pass.
-- You may delegate a diff review to the \`reviewer\` subagent before finishing.
+- Before declaring done, delegate a diff review to the \`reviewer\` subagent and address any issues it finds.
 - Keep the final summary concise: what changed and why.`.trim();
 
 /** Per-stack idioms, appended only when that stack is detected at the root. */
