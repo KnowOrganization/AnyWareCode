@@ -98,6 +98,9 @@ const configSchema = z.object({
   RUNNER_ENGINE: z.enum(["claude", "claw"]).default("claude"),
   /** Model used when a task doesn't request one (BYO providers use their own). */
   DEFAULT_MODEL: z.string().default("claude-sonnet-4-6"),
+  /** Default model for /code when no model is picked (deeper work → Opus).
+   * /ask and chat keep DEFAULT_MODEL. Ignored for custom providers. */
+  CODE_MODEL: z.string().default("claude-opus-4-8"),
   /** Selectable models for /code (csv); empty = no picker, DEFAULT_MODEL only. */
   MODEL_ALLOWLIST: z
     .string()

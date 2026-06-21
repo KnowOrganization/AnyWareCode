@@ -143,4 +143,19 @@ describe("buildSystemAppend", () => {
     writeFileSync(path.join(empty, "AGENTS.md"), "   \n");
     expect(buildSystemAppend(specWith({}), empty)).not.toContain("AGENTS.md");
   });
+
+  it("injects CLAUDE.md, and merges it with AGENTS.md when both exist", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "aw-"));
+    writeFileSync(path.join(dir, "CLAUDE.md"), "# Claude rules\nPrefer pnpm.");
+    const claudeOnly = buildSystemAppend(specWith({}), dir);
+    expect(claudeOnly).toContain("Prefer pnpm.");
+    expect(claudeOnly).toContain("repo-authored");
+
+    writeFileSync(path.join(dir, "AGENTS.md"), "# Agents\nRun tests.");
+    const both = buildSystemAppend(specWith({}), dir);
+    expect(both).toContain("Prefer pnpm.");
+    expect(both).toContain("Run tests.");
+    // CLAUDE.md first (closest to the terminal experience).
+    expect(both.indexOf("Prefer pnpm.")).toBeLessThan(both.indexOf("Run tests."));
+  });
 });

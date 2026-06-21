@@ -285,6 +285,10 @@ export async function launchTask(
   const fundedBy = req.planMode
     ? "plan"
     : (req.prefundedBy ?? (await bumpUsage(ctx.db, req.guildId, req.mode)));
+  // /code defaults to a stronger model (deeper work); /ask + chat keep
+  // DEFAULT_MODEL. An explicit pick always wins; custom providers ignore it.
+  const model =
+    req.model ?? (req.mode === "code" ? ctx.config.CODE_MODEL : undefined);
   const outcome = ctx.orchestrator
     .run({
       guildId: req.guildId,
@@ -298,7 +302,7 @@ export async function launchTask(
       fundedBy,
       ...(req.requestedById ? { requestedById: req.requestedById } : {}),
       ...(req.planApprovedBy ? { planApprovedBy: req.planApprovedBy } : {}),
-      ...(req.model ? { model: req.model } : {}),
+      ...(model ? { model } : {}),
       ...(req.planMode ? { planMode: true } : {}),
       ...(req.taskId ? { taskId: req.taskId } : {}),
       ...(req.deferPr ? { deferPr: true } : {}),

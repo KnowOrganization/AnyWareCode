@@ -221,10 +221,23 @@ async function main(): Promise<void> {
   emit({ type: "done", summary });
 }
 
+/**
+ * stdout → the Docker attach socket is a PIPE, which Node writes asynchronously.
+ * `process.exit()` does NOT drain it, so an immediate exit after the final
+ * `emit({type:"done"})` truncates that line — the bot never sees `done` and
+ * reports "agent stopped unexpectedly". Drain first, then exit.
+ */
+function flushAndExit(code: number): never | void {
+  const done = (): never => process.exit(code);
+  if (process.stdout.writableLength === 0) return done();
+  process.stdout.once("drain", done);
+  setTimeout(done, 2000).unref(); // safety: never hang if drain never fires
+}
+
 main()
-  .then(() => process.exit(0))
+  .then(() => flushAndExit(0))
   .catch((err: unknown) => {
     const raw = err instanceof Error ? err.message : String(err);
     emit({ type: "error", message: redactSecrets(raw) });
-    process.exit(1);
+    flushAndExit(1);
   });
