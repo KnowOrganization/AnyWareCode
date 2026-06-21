@@ -720,7 +720,8 @@ function openaiModal(): ModalBuilder {
 			new ActionRowBuilder<TextInputBuilder>().addComponents(
 				new TextInputBuilder()
 					.setCustomId("model")
-					.setLabel("Model (blank for default, e.g. gpt-4o-mini)")
+					.setLabel("Model (optional)")
+					.setPlaceholder("blank for default, e.g. gpt-4o-mini")
 					.setStyle(TextInputStyle.Short)
 					.setMaxLength(256)
 					.setRequired(false),
@@ -744,7 +745,8 @@ function openrouterModal(): ModalBuilder {
 			new ActionRowBuilder<TextInputBuilder>().addComponents(
 				new TextInputBuilder()
 					.setCustomId("model")
-					.setLabel("Model (blank for default, e.g. openrouter/auto)")
+					.setLabel("Model (optional)")
+					.setPlaceholder("blank for default, e.g. openrouter/auto")
 					.setStyle(TextInputStyle.Short)
 					.setMaxLength(200)
 					.setRequired(false),
