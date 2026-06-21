@@ -287,6 +287,22 @@ function flushAndExit(code: number): never | void {
 	setTimeout(done, 2000).unref(); // safety: never hang if drain never fires
 }
 
+// Last-resort handlers: an uncaught exception or unhandled rejection (e.g. a
+// crash in the SDK subprocess wiring or the translator sidecar) would otherwise
+// exit the process silently — the bot then sees no "done"/"error" event and
+// reports the opaque "agent stopped unexpectedly". Emit a redacted error first so
+// the failure is always attributable, then tear down and flush.
+process.on("uncaughtException", (err: unknown) => {
+	const m = err instanceof Error ? (err.stack ?? err.message) : String(err);
+	emit({ type: "error", message: redactSecrets(`uncaught exception: ${m}`) });
+	void closeTranslator().finally(() => flushAndExit(1));
+});
+process.on("unhandledRejection", (reason: unknown) => {
+	const m = reason instanceof Error ? (reason.stack ?? reason.message) : String(reason);
+	emit({ type: "error", message: redactSecrets(`unhandled rejection: ${m}`) });
+	void closeTranslator().finally(() => flushAndExit(1));
+});
+
 main()
 	.then(() => flushAndExit(0))
 	.catch((err: unknown) => {

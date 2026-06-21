@@ -9,6 +9,7 @@ import {
   type TaskSpec,
 } from "@anywarecode/shared";
 import type { Config } from "../config.js";
+import { log } from "../observability.js";
 
 export interface WorkspaceHandle {
   /** Opaque id for /cancel bookkeeping (container id for Docker). */
@@ -16,6 +17,11 @@ export interface WorkspaceHandle {
   events: AsyncIterable<RunnerEvent>;
   send(message: HostMessage): void;
   kill(): Promise<void>;
+  /** Container exit detail, available after the event stream closes. Optional so
+   *  non-Docker backends need not implement it. */
+  exitInfo?(): { exitCode: number | null; oomKilled: boolean };
+  /** Retained tail (~4 KB) of the runner's stderr — diagnostic for silent exits. */
+  lastStderr?(): string;
 }
 
 /**
@@ -82,7 +88,27 @@ export class DockerWorkspace implements Workspace {
     const stdout = new PassThrough();
     const stderr = new PassThrough();
     container.modem.demuxStream(stream, stdout, stderr);
-    stderr.resume(); // drain; runner debug output goes to the bot's logs only
+
+    // Capture runner stderr (debug + crash output) instead of discarding it. Each
+    // line is logged and a bounded tail is retained so a silent container death
+    // (no "done"/"error" event) is still diagnosable from the failure path.
+    let stderrTail = "";
+    const STDERR_TAIL_MAX = 4096;
+    const stderrRl = createInterface({ input: stderr, crlfDelay: Infinity });
+    stderrRl.on("line", (line) => {
+      if (!line) return;
+      log.warn({ taskId: spec.taskId, src: "runner-stderr" }, line);
+      stderrTail = `${stderrTail}${line}\n`.slice(-STDERR_TAIL_MAX);
+    });
+
+    // Container exit detail, captured before AutoRemove destroys the container so
+    // the bot can report *why* a silent exit happened (non-zero code, OOM).
+    let exitCode: number | null = null;
+    let oomKilled = false;
+    const captureExit = (info: Docker.ContainerInspectInfo): void => {
+      if (typeof info.State.ExitCode === "number") exitCode = info.State.ExitCode;
+      if (info.State.OOMKilled) oomKilled = true;
+    };
 
     // demuxStream never propagates end-of-stream. We poll container state to
     // reliably detect exit. Both container.wait() and the attach stream's
@@ -96,14 +122,24 @@ export class DockerWorkspace implements Workspace {
     const waitUntilExit = async (): Promise<void> => {
       for (;;) {
         try {
-          await container.wait();
+          const res = await container.wait();
+          if (res && typeof res.StatusCode === "number") exitCode = res.StatusCode;
+          // Best-effort richer detail (OOM flag) before AutoRemove fires.
+          try {
+            captureExit(await container.inspect());
+          } catch {
+            /* container already gone */
+          }
           return; // clean exit
         } catch {
           // wait() connection dropped; check whether the container is still running.
         }
         try {
           const info = await container.inspect();
-          if (!info.State.Running) return; // stopped (AutoRemove may not have fired yet)
+          if (!info.State.Running) {
+            captureExit(info);
+            return; // stopped (AutoRemove may not have fired yet)
+          }
           // Still running — brief pause before retrying wait().
           await new Promise<void>((r) => setTimeout(r, 2000));
         } catch {
@@ -111,10 +147,14 @@ export class DockerWorkspace implements Workspace {
         }
       }
     };
-    void waitUntilExit().then(finish);
 
     await container.start();
     stream.write(serializeEvent(spec));
+    // Start exit-watching only AFTER the container is running. Calling
+    // container.wait() on a not-yet-started container can resolve or error
+    // immediately, firing finish() before any output flows — a false
+    // "stopped unexpectedly" with an empty event stream.
+    void waitUntilExit().then(finish);
 
     async function* events(): AsyncGenerator<RunnerEvent> {
       const rl = createInterface({ input: stdout, crlfDelay: Infinity });
@@ -133,6 +173,8 @@ export class DockerWorkspace implements Workspace {
       kill: async () => {
         await container.kill().catch(() => {});
       },
+      exitInfo: () => ({ exitCode, oomKilled }),
+      lastStderr: () => stderrTail,
     };
   }
 }

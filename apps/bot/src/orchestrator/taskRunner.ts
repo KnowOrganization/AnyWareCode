@@ -585,8 +585,27 @@ export class TaskOrchestrator {
 		// "finished without changes" success branch.
 		if (!sawDone && !errorMessage && !this.reasonOf(task)) {
 			await this.settle(task, "failed");
+			// Surface why the container died, captured by the workspace before
+			// AutoRemove fired. The stderr tail goes to logs (may contain paths/URLs,
+			// never tokens — redacted at the runner), a concise cause to the thread.
+			const info = handle.exitInfo?.();
+			const stderrTail = handle.lastStderr?.() ?? "";
+			log.error(
+				{
+					taskId,
+					exitCode: info?.exitCode ?? null,
+					oomKilled: info?.oomKilled ?? false,
+					stderrTail: stderrTail || undefined,
+				},
+				"runner exited without emitting done/error",
+			);
+			let detail = "";
+			if (info?.oomKilled) detail = " — the container ran out of memory";
+			else if (typeof info?.exitCode === "number" && info.exitCode !== 0) {
+				detail = ` — container exit code ${info.exitCode}`;
+			}
 			await thread.send(
-				"⚠️ The agent stopped unexpectedly (the container exited without finishing). Nothing was pushed.",
+				`⚠️ The agent stopped unexpectedly${detail} (the container exited without finishing). Nothing was pushed.`,
 			);
 			return out("failed");
 		}
