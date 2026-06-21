@@ -21,9 +21,12 @@ vi.mock("./gates.js", async (orig) => ({
 	...(await orig<typeof import("./gates.js")>()),
 	ensureGuild: vi.fn(async () => ({})),
 }));
+vi.mock("../flags.js", () => ({ isClaudeOauthEnabled: vi.fn(async () => true) }));
 
+import type { ButtonInteraction } from "discord.js";
 import { validateLlmAuth } from "../llm/credentials.js";
 import {
+	handleLlmButton,
 	handleLlmModal,
 	clearLlmCredentialWithRetry,
 	type LlmCredStore,
@@ -172,6 +175,40 @@ describe("Bounded-retry credential removal (Property 20; Req 8.4,8.5,8.6)", () =
 		expect(res.attempts).toBe(4);
 		expect(attempts).toBe(4);
 	});
+});
+
+describe("provider modals respect Discord field limits (showModal regression)", () => {
+	// A label >45 chars makes showModal throw → Discord's "Something went wrong".
+	// Drive each provider button and assert every TextInput label ≤45, placeholder ≤100.
+	it.each(["anthropic_api_key", "claude_oauth", "custom", "openai", "openrouter"])(
+		"%s modal labels are within limits",
+		async (action) => {
+			let modal: { toJSON(): unknown } | undefined;
+			const interaction = {
+				memberPermissions: { has: (_p: unknown) => true },
+				guildId: "g1",
+				showModal: vi.fn(async (m: { toJSON(): unknown }) => {
+					modal = m;
+				}),
+				reply: vi.fn(async () => {}),
+			} as unknown as ButtonInteraction;
+			const ctx = { db: {}, config } as unknown as BotContext;
+			await handleLlmButton(ctx, interaction, action);
+			expect(modal).toBeDefined();
+			const json = modal!.toJSON() as {
+				components: { components: { label: string; placeholder?: string }[] }[];
+			};
+			for (const row of json.components) {
+				for (const input of row.components) {
+					expect(input.label.length).toBeLessThanOrEqual(45);
+					expect(input.label.length).toBeGreaterThanOrEqual(1);
+					if (input.placeholder != null) {
+						expect(input.placeholder.length).toBeLessThanOrEqual(100);
+					}
+				}
+			}
+		},
+	);
 });
 
 describe("Connect_Flow chooser, modal limits, gating (task 7.7)", () => {
