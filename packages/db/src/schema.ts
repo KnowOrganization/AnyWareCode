@@ -1,114 +1,124 @@
 import {
-  bigint,
-  bigserial,
-  boolean,
-  index,
-  integer,
-  jsonb,
-  pgEnum,
-  pgTable,
-  primaryKey,
-  text,
-  timestamp,
+	bigint,
+	bigserial,
+	boolean,
+	index,
+	integer,
+	jsonb,
+	pgEnum,
+	pgTable,
+	primaryKey,
+	text,
+	timestamp,
 } from "drizzle-orm/pg-core";
 
 /** Subscription tiers. Seeded rows; razorpayPlanId* link a tier to Razorpay
  * (one plan id per currency). */
 export const plans = pgTable("plans", {
-  id: text("id").primaryKey(), // "free" | "oss" | "pro" | "studio"
-  name: text("name").notNull(),
-  /** Monthly /code cap. /ask is unlimited on every plan. */
-  taskCap: integer("task_cap").notNull(),
-  /** Concurrent tasks per guild; mirrored onto guilds.concurrency. */
-  concurrency: integer("concurrency").notNull().default(1),
-  /** Razorpay plan id for INR subscriptions. */
-  razorpayPlanIdInr: text("razorpay_plan_id_inr"),
-  /** Razorpay plan id for USD (international) subscriptions. */
-  razorpayPlanIdUsd: text("razorpay_plan_id_usd"),
-  features: jsonb("features").$type<string[]>().notNull().default([]),
-  isDefault: boolean("is_default").notNull().default(false),
+	id: text("id").primaryKey(), // "free" | "oss" | "pro" | "studio"
+	name: text("name").notNull(),
+	/** Monthly /code cap. /ask is unlimited on every plan. */
+	taskCap: integer("task_cap").notNull(),
+	/** Concurrent tasks per guild; mirrored onto guilds.concurrency. */
+	concurrency: integer("concurrency").notNull().default(1),
+	/** Razorpay plan id for INR subscriptions. */
+	razorpayPlanIdInr: text("razorpay_plan_id_inr"),
+	/** Razorpay plan id for USD (international) subscriptions. */
+	razorpayPlanIdUsd: text("razorpay_plan_id_usd"),
+	features: jsonb("features").$type<string[]>().notNull().default([]),
+	isDefault: boolean("is_default").notNull().default(false),
 });
 
 export const subscriptionStatus = pgEnum("subscription_status", [
-  "trialing",
-  "active",
-  "past_due",
-  "canceled",
-  "free",
+	"trialing",
+	"active",
+	"past_due",
+	"canceled",
+	"free",
 ]);
 
 export const ossStatus = pgEnum("oss_status", [
-  "none",
-  "pending",
-  "approved",
-  "rejected",
+	"none",
+	"pending",
+	"approved",
+	"rejected",
 ]);
 
 export const guilds = pgTable("guilds", {
-  id: text("id").primaryKey(), // Discord guild snowflake
-  /** Discord server name, captured best-effort by the bot for the admin panel. */
-  name: text("name"),
-  /** Role allowed to invoke /code; null = server admins only. */
-  allowedRoleId: text("allowed_role_id"),
-  /** Effective monthly /code cap. Maintained by ensureGuild (Free floor) and
-   * the Razorpay webhook / admin panel (paid plan). capState reads this directly. */
-  taskCap: integer("task_cap").notNull().default(0),
-  /** Effective concurrent-task limit; mirror of plans.concurrency, same
-   * maintenance pattern as taskCap. */
-  concurrency: integer("concurrency").notNull().default(1),
-  /** Task-pack balance. Never touched by the monthly reset. */
-  packTasksRemaining: integer("pack_tasks_remaining").notNull().default(0),
-  tasksUsedThisMonth: integer("tasks_used_this_month").notNull().default(0),
-  asksUsedThisMonth: integer("asks_used_this_month").notNull().default(0),
-  capResetAt: timestamp("cap_reset_at", { withTimezone: true }).notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-  /** Billing. planId references plans.id once on a paid tier. */
-  planId: text("plan_id"),
-  razorpayCustomerId: text("razorpay_customer_id"),
-  razorpaySubscriptionId: text("razorpay_subscription_id"),
-  subStatus: subscriptionStatus("sub_status").notNull().default("free"),
-  /** Which billing rail owns the subscription; cancel paths guard on it so a
-   * stale event from one rail can't wipe another rail's plan. "admin" = a
-   * manual operator override that no webhook rail may clobber. */
-  subSource: text("sub_source", { enum: ["razorpay", "discord", "admin"] }),
-  /** Code tasks require the sponsoring member to have run /link github. */
-  requireLinkedSponsor: boolean("require_linked_sponsor")
-    .notNull()
-    .default(false),
-  currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }),
-  /** OSS Community tier application state. */
-  ossStatus: ossStatus("oss_status").notNull().default("none"),
-  ossAppliedAt: timestamp("oss_applied_at", { withTimezone: true }),
-  ossReviewedAt: timestamp("oss_reviewed_at", { withTimezone: true }),
-  /** Per-server hard kill switch (abuse response). */
-  suspended: boolean("suspended").notNull().default(false),
-  /** Ship Log channel; null = off. */
-  shiplogChannelId: text("shiplog_channel_id"),
-  /** Plan-vote approval mode for code tasks. */
-  planVoteMode: text("plan_vote_mode", {
-    enum: ["instant", "one_approval", "role_gated"],
-  })
-    .notNull()
-    .default("instant"),
-  /** Role that may approve plan votes (role_gated mode). */
-  planVoteRoleId: text("plan_vote_role_id"),
-  /** BYO-LLM: guild-scoped credential. All nullable; absent = no LLM connected. */
-  llmProviderType: text("llm_provider_type", {
-    enum: ["claude_oauth", "anthropic_api_key", "custom"],
-  }),
-  /** AES-256-GCM encrypted token blob (v1.<iv>.<ct>.<tag> base64url). */
-  llmCredentialEnc: text("llm_credential_enc"),
-  /** Custom provider only: Anthropic-compatible base URL. */
-  llmBaseUrl: text("llm_base_url"),
-  /** Custom provider only: model name passed as ANTHROPIC_MODEL. */
-  llmModel: text("llm_model"),
-  llmCredentialSetAt: timestamp("llm_credential_set_at", { withTimezone: true }),
-  /** Bumped on every billing write; admin edits use it for optimistic concurrency. */
-  updatedAt: timestamp("updated_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
+	id: text("id").primaryKey(), // Discord guild snowflake
+	/** Discord server name, captured best-effort by the bot for the admin panel. */
+	name: text("name"),
+	/** Role allowed to invoke /code; null = server admins only. */
+	allowedRoleId: text("allowed_role_id"),
+	/** Effective monthly /code cap. Maintained by ensureGuild (Free floor) and
+	 * the Razorpay webhook / admin panel (paid plan). capState reads this directly. */
+	taskCap: integer("task_cap").notNull().default(0),
+	/** Effective concurrent-task limit; mirror of plans.concurrency, same
+	 * maintenance pattern as taskCap. */
+	concurrency: integer("concurrency").notNull().default(1),
+	/** Task-pack balance. Never touched by the monthly reset. */
+	packTasksRemaining: integer("pack_tasks_remaining").notNull().default(0),
+	tasksUsedThisMonth: integer("tasks_used_this_month").notNull().default(0),
+	asksUsedThisMonth: integer("asks_used_this_month").notNull().default(0),
+	capResetAt: timestamp("cap_reset_at", { withTimezone: true }).notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true })
+		.notNull()
+		.defaultNow(),
+	/** Billing. planId references plans.id once on a paid tier. */
+	planId: text("plan_id"),
+	razorpayCustomerId: text("razorpay_customer_id"),
+	razorpaySubscriptionId: text("razorpay_subscription_id"),
+	subStatus: subscriptionStatus("sub_status").notNull().default("free"),
+	/** Which billing rail owns the subscription; cancel paths guard on it so a
+	 * stale event from one rail can't wipe another rail's plan. "admin" = a
+	 * manual operator override that no webhook rail may clobber. */
+	subSource: text("sub_source", { enum: ["razorpay", "discord", "admin"] }),
+	/** Code tasks require the sponsoring member to have run /link github. */
+	requireLinkedSponsor: boolean("require_linked_sponsor")
+		.notNull()
+		.default(false),
+	currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }),
+	/** OSS Community tier application state. */
+	ossStatus: ossStatus("oss_status").notNull().default("none"),
+	ossAppliedAt: timestamp("oss_applied_at", { withTimezone: true }),
+	ossReviewedAt: timestamp("oss_reviewed_at", { withTimezone: true }),
+	/** Per-server hard kill switch (abuse response). */
+	suspended: boolean("suspended").notNull().default(false),
+	/** Ship Log channel; null = off. */
+	shiplogChannelId: text("shiplog_channel_id"),
+	/** Plan-vote approval mode for code tasks. */
+	planVoteMode: text("plan_vote_mode", {
+		enum: ["instant", "one_approval", "role_gated"],
+	})
+		.notNull()
+		.default("instant"),
+	/** Role that may approve plan votes (role_gated mode). */
+	planVoteRoleId: text("plan_vote_role_id"),
+	/** BYO-LLM: guild-scoped credential. All nullable; absent = no LLM connected. */
+	llmProviderType: text("llm_provider_type", {
+		enum: [
+			"claude_oauth",
+			"anthropic_api_key",
+			"custom",
+			"openai",
+			"openrouter",
+		],
+	}),
+	/** AES-256-GCM encrypted token blob (v1.<iv>.<ct>.<tag> base64url). */
+	llmCredentialEnc: text("llm_credential_enc"),
+	/** Custom provider only: Anthropic-compatible base URL. */
+	llmBaseUrl: text("llm_base_url"),
+	/** Selected_Model for every provider type (the guild's chosen model;
+	 * null = fall back to the provider type's Default_Model). Passed as
+	 * ANTHROPIC_MODEL for Anthropic-compatible providers. */
+	llmModel: text("llm_model"),
+	llmCredentialSetAt: timestamp("llm_credential_set_at", {
+		withTimezone: true,
+	}),
+	/** Bumped on every billing write; admin edits use it for optimistic concurrency. */
+	updatedAt: timestamp("updated_at", { withTimezone: true })
+		.notNull()
+		.defaultNow(),
 });
 
 /**
@@ -117,28 +127,28 @@ export const guilds = pgTable("guilds", {
  * appends rows, never overwrites. Indexed by installation for webhook fan-out.
  */
 export const guildInstallations = pgTable(
-  "guild_installations",
-  {
-    guildId: text("guild_id").notNull(),
-    installationId: bigint("installation_id", { mode: "number" }).notNull(),
-    /** Installation owner login (org or user). */
-    accountLogin: text("account_login").notNull(),
-    linkedAt: timestamp("linked_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-  (t) => [
-    primaryKey({ columns: [t.guildId, t.installationId] }),
-    index("guild_installations_installation_idx").on(t.installationId),
-  ],
+	"guild_installations",
+	{
+		guildId: text("guild_id").notNull(),
+		installationId: bigint("installation_id", { mode: "number" }).notNull(),
+		/** Installation owner login (org or user). */
+		accountLogin: text("account_login").notNull(),
+		linkedAt: timestamp("linked_at", { withTimezone: true })
+			.notNull()
+			.defaultNow(),
+	},
+	(t) => [
+		primaryKey({ columns: [t.guildId, t.installationId] }),
+		index("guild_installations_installation_idx").on(t.installationId),
+	],
 );
 
 export const channelRepos = pgTable("channel_repos", {
-  channelId: text("channel_id").primaryKey(),
-  guildId: text("guild_id").notNull(),
-  repoFullName: text("repo_full_name").notNull(),
-  /** Which linked installation owns this repo (resolved at /repo set time). */
-  installationId: bigint("installation_id", { mode: "number" }),
+	channelId: text("channel_id").primaryKey(),
+	guildId: text("guild_id").notNull(),
+	repoFullName: text("repo_full_name").notNull(),
+	/** Which linked installation owns this repo (resolved at /repo set time). */
+	installationId: bigint("installation_id", { mode: "number" }),
 });
 
 /**
@@ -147,58 +157,61 @@ export const channelRepos = pgTable("channel_repos", {
  * URL can't be replayed to relink a guild. Rows expire after a short window.
  */
 export const setupStates = pgTable("setup_states", {
-  nonce: text("nonce").primaryKey(),
-  guildId: text("guild_id").notNull(),
-  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
+	nonce: text("nonce").primaryKey(),
+	guildId: text("guild_id").notNull(),
+	expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true })
+		.notNull()
+		.defaultNow(),
 });
 
 export const taskStatus = pgEnum("task_status", [
-  "queued",
-  "running",
-  "done",
-  "failed",
-  "cancelled",
+	"queued",
+	"running",
+	"done",
+	"failed",
+	"cancelled",
 ]);
 
 export const tasks = pgTable("tasks", {
-  id: text("id").primaryKey(),
-  guildId: text("guild_id").notNull(),
-  channelId: text("channel_id").notNull(),
-  threadId: text("thread_id").notNull(),
-  repoFullName: text("repo_full_name").notNull(),
-  /** Installation the task ran under — buttons (Merge/Iterate/Preview) read
-   * this stamp instead of re-resolving, so unlinking can't redirect them. */
-  installationId: bigint("installation_id", { mode: "number" }),
-  branch: text("branch").notNull(),
-  baseBranch: text("base_branch").notNull(),
-  mode: text("mode", { enum: ["code", "ask"] }).notNull().default("code"),
-  status: taskStatus("status").notNull().default("queued"),
-  prNumber: integer("pr_number"),
-  containerId: text("container_id"),
-  prompt: text("prompt").notNull(),
-  requestedBy: text("requested_by").notNull(),
-  /** Quota bucket this task consumed; refunds must reverse the same bucket. */
-  fundedBy: text("funded_by", { enum: ["plan", "pack"] })
-    .notNull()
-    .default("plan"),
-  /** Provenance: who approved the plan vote (null = instant mode). */
-  planApprovedBy: text("plan_approved_by"),
-  /** Per-file change stats; lets squad vote cards rebuild after a restart. */
-  diffSummary: jsonb("diff_summary").$type<
-    Array<{ path: string; additions: number; deletions: number }>
-  >(),
-  /** Discord message id of the PR card (Preview button edits it in place). */
-  prMessageId: text("pr_message_id"),
-  previewUrl: text("preview_url"),
-  /** Atomic claim for the Ship Log dual-trigger (button + webhook). */
-  shiplogPostedAt: timestamp("shiplog_posted_at", { withTimezone: true }),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-  finishedAt: timestamp("finished_at", { withTimezone: true }),
+	id: text("id").primaryKey(),
+	guildId: text("guild_id").notNull(),
+	channelId: text("channel_id").notNull(),
+	threadId: text("thread_id").notNull(),
+	repoFullName: text("repo_full_name").notNull(),
+	/** Installation the task ran under — buttons (Merge/Iterate/Preview) read
+	 * this stamp instead of re-resolving, so unlinking can't redirect them. */
+	installationId: bigint("installation_id", { mode: "number" }),
+	branch: text("branch").notNull(),
+	baseBranch: text("base_branch").notNull(),
+	mode: text("mode", { enum: ["code", "ask"] })
+		.notNull()
+		.default("code"),
+	status: taskStatus("status").notNull().default("queued"),
+	prNumber: integer("pr_number"),
+	containerId: text("container_id"),
+	prompt: text("prompt").notNull(),
+	requestedBy: text("requested_by").notNull(),
+	/** Quota bucket this task consumed; refunds must reverse the same bucket. */
+	fundedBy: text("funded_by", { enum: ["plan", "pack"] })
+		.notNull()
+		.default("plan"),
+	/** Provenance: who approved the plan vote (null = instant mode). */
+	planApprovedBy: text("plan_approved_by"),
+	/** Per-file change stats; lets squad vote cards rebuild after a restart. */
+	diffSummary:
+		jsonb("diff_summary").$type<
+			Array<{ path: string; additions: number; deletions: number }>
+		>(),
+	/** Discord message id of the PR card (Preview button edits it in place). */
+	prMessageId: text("pr_message_id"),
+	previewUrl: text("preview_url"),
+	/** Atomic claim for the Ship Log dual-trigger (button + webhook). */
+	shiplogPostedAt: timestamp("shiplog_posted_at", { withTimezone: true }),
+	createdAt: timestamp("created_at", { withTimezone: true })
+		.notNull()
+		.defaultNow(),
+	finishedAt: timestamp("finished_at", { withTimezone: true }),
 });
 
 /**
@@ -207,257 +220,262 @@ export const tasks = pgTable("tasks", {
  * (pending -> accepted) and expire after CHAT_PROPOSAL_TTL_MINUTES.
  */
 export const proposals = pgTable("proposals", {
-  id: text("id").primaryKey(),
-  guildId: text("guild_id").notNull(),
-  /** Repo-binding text channel (parent channel when proposed inside a thread). */
-  channelId: text("channel_id").notNull(),
-  /** Set when the proposal was made inside an existing thread. */
-  threadId: text("thread_id"),
-  repoFullName: text("repo_full_name").notNull(),
-  /** Installation owning the repo, stamped at creation (webhook payload or
-   * channel binding); Run resolves through this. */
-  installationId: bigint("installation_id", { mode: "number" }),
-  prompt: text("prompt").notNull(),
-  summary: text("summary").notNull(),
-  /** Discord user whose mention produced the proposal. */
-  authorId: text("author_id").notNull(),
-  status: text("status", { enum: ["pending", "accepted", "dismissed"] })
-    .notNull()
-    .default("pending"),
-  /** What produced this proposal; gates dismiss rules + card rendering. */
-  source: text("source", {
-    enum: ["chat", "issue", "schedule", "plan", "standup"],
-  })
-    .notNull()
-    .default("chat"),
-  /** source=issue: the GitHub issue number. */
-  issueNumber: integer("issue_number"),
-  /** source=schedule: the schedules row that fired. */
-  scheduleId: text("schedule_id"),
-  /** source=plan: the generated plan shown on the vote card. */
-  planText: text("plan_text"),
-  /** Discord message id of the card (reaction approval + in-place edits). */
-  messageId: text("message_id"),
-  /** Quarantine injection flags found in the source content (audit trail). */
-  flags: jsonb("flags").$type<string[]>().notNull().default([]),
-  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
+	id: text("id").primaryKey(),
+	guildId: text("guild_id").notNull(),
+	/** Repo-binding text channel (parent channel when proposed inside a thread). */
+	channelId: text("channel_id").notNull(),
+	/** Set when the proposal was made inside an existing thread. */
+	threadId: text("thread_id"),
+	repoFullName: text("repo_full_name").notNull(),
+	/** Installation owning the repo, stamped at creation (webhook payload or
+	 * channel binding); Run resolves through this. */
+	installationId: bigint("installation_id", { mode: "number" }),
+	prompt: text("prompt").notNull(),
+	summary: text("summary").notNull(),
+	/** Discord user whose mention produced the proposal. */
+	authorId: text("author_id").notNull(),
+	status: text("status", { enum: ["pending", "accepted", "dismissed"] })
+		.notNull()
+		.default("pending"),
+	/** What produced this proposal; gates dismiss rules + card rendering. */
+	source: text("source", {
+		enum: ["chat", "issue", "schedule", "plan", "standup"],
+	})
+		.notNull()
+		.default("chat"),
+	/** source=issue: the GitHub issue number. */
+	issueNumber: integer("issue_number"),
+	/** source=schedule: the schedules row that fired. */
+	scheduleId: text("schedule_id"),
+	/** source=plan: the generated plan shown on the vote card. */
+	planText: text("plan_text"),
+	/** Discord message id of the card (reaction approval + in-place edits). */
+	messageId: text("message_id"),
+	/** Quarantine injection flags found in the source content (audit trail). */
+	flags: jsonb("flags").$type<string[]>().notNull().default([]),
+	expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true })
+		.notNull()
+		.defaultNow(),
 });
 
 /** Task-pack purchase ledger. Unique provider payment id makes webhook
  * retries/replays idempotent; announcedAt drives the bot's public credit. The
  * Discord rail uses a synthetic `discord:<entitlementId>` key here. */
 export const taskPackPurchases = pgTable("task_pack_purchases", {
-  id: text("id").primaryKey(),
-  guildId: text("guild_id").notNull(),
-  /** Discord user id of the buyer. */
-  purchasedBy: text("purchased_by").notNull(),
-  purchaserName: text("purchaser_name").notNull(),
-  tasks: integer("tasks").notNull(),
-  amountCents: integer("amount_cents").notNull(),
-  razorpayPaymentId: text("razorpay_payment_id").notNull().unique(),
-  announcedAt: timestamp("announced_at", { withTimezone: true }),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
+	id: text("id").primaryKey(),
+	guildId: text("guild_id").notNull(),
+	/** Discord user id of the buyer. */
+	purchasedBy: text("purchased_by").notNull(),
+	purchaserName: text("purchaser_name").notNull(),
+	tasks: integer("tasks").notNull(),
+	amountCents: integer("amount_cents").notNull(),
+	razorpayPaymentId: text("razorpay_payment_id").notNull().unique(),
+	announcedAt: timestamp("announced_at", { withTimezone: true }),
+	createdAt: timestamp("created_at", { withTimezone: true })
+		.notNull()
+		.defaultNow(),
 });
 
 /** Operator-flippable runtime flags (e.g. claude_oauth kill switch). */
 export const appSettings = pgTable("app_settings", {
-  key: text("key").primaryKey(),
-  value: jsonb("value").notNull(),
-  updatedAt: timestamp("updated_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
+	key: text("key").primaryKey(),
+	value: jsonb("value").notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true })
+		.notNull()
+		.defaultNow(),
 });
 
 /** GitHub webhook delivery dedup (X-GitHub-Delivery). Pruned at boot. */
 export const webhookDeliveries = pgTable("webhook_deliveries", {
-  deliveryId: text("delivery_id").primaryKey(),
-  event: text("event").notNull(),
-  receivedAt: timestamp("received_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
+	deliveryId: text("delivery_id").primaryKey(),
+	event: text("event").notNull(),
+	receivedAt: timestamp("received_at", { withTimezone: true })
+		.notNull()
+		.defaultNow(),
 });
 
 /** Razorpay webhook event dedup (event id). Same pattern as webhookDeliveries. */
 export const razorpayWebhookEvents = pgTable("razorpay_webhook_events", {
-  eventId: text("event_id").primaryKey(),
-  type: text("type").notNull(),
-  receivedAt: timestamp("received_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
+	eventId: text("event_id").primaryKey(),
+	type: text("type").notNull(),
+	receivedAt: timestamp("received_at", { withTimezone: true })
+		.notNull()
+		.defaultNow(),
 });
 
 /** Admin-panel mutation audit trail: who changed what, with before/after
  * snapshots (billing columns only — never credential blobs). */
 export const adminAuditLog = pgTable(
-  "admin_audit_log",
-  {
-    id: bigserial("id", { mode: "number" }).primaryKey(),
-    /** session.discordId, or "cli" for the bearer-token path. */
-    actorDiscordId: text("actor_discord_id").notNull(),
-    /** e.g. "guild.setTier", "guild.suspend", "plan.update", "oss.decide". */
-    action: text("action").notNull(),
-    targetType: text("target_type").notNull(), // "guild" | "plan" | "user"
-    targetId: text("target_id").notNull(),
-    before: jsonb("before"),
-    after: jsonb("after"),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-  (t) => [index("admin_audit_log_target_idx").on(t.targetType, t.targetId)],
+	"admin_audit_log",
+	{
+		id: bigserial("id", { mode: "number" }).primaryKey(),
+		/** session.discordId, or "cli" for the bearer-token path. */
+		actorDiscordId: text("actor_discord_id").notNull(),
+		/** e.g. "guild.setTier", "guild.suspend", "plan.update", "oss.decide". */
+		action: text("action").notNull(),
+		targetType: text("target_type").notNull(), // "guild" | "plan" | "user"
+		targetId: text("target_id").notNull(),
+		before: jsonb("before"),
+		after: jsonb("after"),
+		createdAt: timestamp("created_at", { withTimezone: true })
+			.notNull()
+			.defaultNow(),
+	},
+	(t) => [index("admin_audit_log_target_idx").on(t.targetType, t.targetId)],
 );
 
 /** Per-repo feature config (issue feed, auto-review). Guild-singleton config
  * lives as columns on guilds instead. */
 export const repoSettings = pgTable(
-  "repo_settings",
-  {
-    guildId: text("guild_id").notNull(),
-    repoFullName: text("repo_full_name").notNull(),
-    /** Issue-to-Proposal feed channel; null = off. */
-    issueChannelId: text("issue_channel_id"),
-    /** Label allowlist; empty = all labels. */
-    issueLabels: jsonb("issue_labels").$type<string[]>().notNull().default([]),
-    /** Minimum author_association for issue authors. */
-    issueMinAssoc: text("issue_min_assoc", {
-      enum: ["any", "contributor", "member", "owner"],
-    })
-      .notNull()
-      .default("any"),
-    issueDailyCap: integer("issue_daily_cap").notNull().default(10),
-    issueCountToday: integer("issue_count_today").notNull().default(0),
-    /** UTC day bucket the count belongs to. */
-    issueCountDate: timestamp("issue_count_date", { withTimezone: true }),
-    autoReview: boolean("auto_review").notNull().default(false),
-    reviewChannelId: text("review_channel_id"),
-    /** Repro Gate: verify inbound issues in the sandbox before humans triage. */
-    reproGate: boolean("repro_gate").notNull().default(false),
-    /** Consecutive Discord post failures; feed disables itself at 3. */
-    failCount: integer("fail_count").notNull().default(0),
-  },
-  (t) => [primaryKey({ columns: [t.guildId, t.repoFullName] })],
+	"repo_settings",
+	{
+		guildId: text("guild_id").notNull(),
+		repoFullName: text("repo_full_name").notNull(),
+		/** Issue-to-Proposal feed channel; null = off. */
+		issueChannelId: text("issue_channel_id"),
+		/** Label allowlist; empty = all labels. */
+		issueLabels: jsonb("issue_labels")
+			.$type<string[]>()
+			.notNull()
+			.default([]),
+		/** Minimum author_association for issue authors. */
+		issueMinAssoc: text("issue_min_assoc", {
+			enum: ["any", "contributor", "member", "owner"],
+		})
+			.notNull()
+			.default("any"),
+		issueDailyCap: integer("issue_daily_cap").notNull().default(10),
+		issueCountToday: integer("issue_count_today").notNull().default(0),
+		/** UTC day bucket the count belongs to. */
+		issueCountDate: timestamp("issue_count_date", { withTimezone: true }),
+		autoReview: boolean("auto_review").notNull().default(false),
+		reviewChannelId: text("review_channel_id"),
+		/** Repro Gate: verify inbound issues in the sandbox before humans triage. */
+		reproGate: boolean("repro_gate").notNull().default(false),
+		/** Consecutive Discord post failures; feed disables itself at 3. */
+		failCount: integer("fail_count").notNull().default(0),
+	},
+	(t) => [primaryKey({ columns: [t.guildId, t.repoFullName] })],
 );
 
 /** Recurring scheduled tasks ("the night shift"). Fire = proposal card. */
 export const schedules = pgTable("schedules", {
-  id: text("id").primaryKey(),
-  guildId: text("guild_id").notNull(),
-  channelId: text("channel_id").notNull(),
-  repoFullName: text("repo_full_name").notNull(),
-  prompt: text("prompt").notNull(),
-  cadence: text("cadence", { enum: ["daily", "weekly"] }).notNull(),
-  hourUtc: integer("hour_utc").notNull(),
-  /** 0–6 (Sunday=0); weekly cadence only. */
-  dayOfWeek: integer("day_of_week"),
-  nextRunAt: timestamp("next_run_at", { withTimezone: true }).notNull(),
-  lastRunAt: timestamp("last_run_at", { withTimezone: true }),
-  enabled: boolean("enabled").notNull().default(true),
-  failCount: integer("fail_count").notNull().default(0),
-  createdBy: text("created_by").notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
+	id: text("id").primaryKey(),
+	guildId: text("guild_id").notNull(),
+	channelId: text("channel_id").notNull(),
+	repoFullName: text("repo_full_name").notNull(),
+	prompt: text("prompt").notNull(),
+	cadence: text("cadence", { enum: ["daily", "weekly"] }).notNull(),
+	hourUtc: integer("hour_utc").notNull(),
+	/** 0–6 (Sunday=0); weekly cadence only. */
+	dayOfWeek: integer("day_of_week"),
+	nextRunAt: timestamp("next_run_at", { withTimezone: true }).notNull(),
+	lastRunAt: timestamp("last_run_at", { withTimezone: true }),
+	enabled: boolean("enabled").notNull().default(true),
+	failCount: integer("fail_count").notNull().default(0),
+	createdBy: text("created_by").notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true })
+		.notNull()
+		.defaultNow(),
 });
 
 /** Server Memory: trusted per-repo conventions doc injected into every run. */
 export const serverMemories = pgTable(
-  "server_memories",
-  {
-    guildId: text("guild_id").notNull(),
-    repoFullName: text("repo_full_name").notNull(),
-    content: text("content").notNull(),
-    updatedBy: text("updated_by").notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-  (t) => [primaryKey({ columns: [t.guildId, t.repoFullName] })],
+	"server_memories",
+	{
+		guildId: text("guild_id").notNull(),
+		repoFullName: text("repo_full_name").notNull(),
+		content: text("content").notNull(),
+		updatedBy: text("updated_by").notNull(),
+		updatedAt: timestamp("updated_at", { withTimezone: true })
+			.notNull()
+			.defaultNow(),
+	},
+	(t) => [primaryKey({ columns: [t.guildId, t.repoFullName] })],
 );
 
 /** Agent-proposed memory additions awaiting a save/dismiss click. */
 export const memorySuggestions = pgTable("memory_suggestions", {
-  id: text("id").primaryKey(),
-  guildId: text("guild_id").notNull(),
-  repoFullName: text("repo_full_name").notNull(),
-  /** Newline-separated one-line rules. */
-  rules: text("rules").notNull(),
-  status: text("status", { enum: ["pending", "saved", "dismissed"] })
-    .notNull()
-    .default("pending"),
-  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
+	id: text("id").primaryKey(),
+	guildId: text("guild_id").notNull(),
+	repoFullName: text("repo_full_name").notNull(),
+	/** Newline-separated one-line rules. */
+	rules: text("rules").notNull(),
+	status: text("status", { enum: ["pending", "saved", "dismissed"] })
+		.notNull()
+		.default("pending"),
+	expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true })
+		.notNull()
+		.defaultNow(),
 });
 
 /** Provenance: a member's verified GitHub identity (login only — the OAuth
  * token is discarded the moment the login is fetched). User-keyed, so it
  * survives guild deletion. */
 export const userLinks = pgTable("user_links", {
-  discordUserId: text("discord_user_id").primaryKey(),
-  githubLogin: text("github_login").notNull(),
-  verifiedAt: timestamp("verified_at", { withTimezone: true }).notNull(),
+	discordUserId: text("discord_user_id").primaryKey(),
+	githubLogin: text("github_login").notNull(),
+	verifiedAt: timestamp("verified_at", { withTimezone: true }).notNull(),
 });
 
 /** Per-server MCP extensions attached to agent runs (remote http/sse only). */
 export const mcpServers = pgTable(
-  "mcp_servers",
-  {
-    guildId: text("guild_id").notNull(),
-    /** Tool namespace: tools surface as mcp__<name>__<tool>. */
-    name: text("name").notNull(),
-    type: text("type", { enum: ["http", "sse"] }).notNull().default("http"),
-    url: text("url").notNull(),
-    /** AES-256-GCM blob (AAD = guildId); decrypted only into TaskSpec stdin. */
-    authHeaderEnc: text("auth_header_enc"),
-    enabled: boolean("enabled").notNull().default(true),
-    createdBy: text("created_by").notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-  (t) => [primaryKey({ columns: [t.guildId, t.name] })],
+	"mcp_servers",
+	{
+		guildId: text("guild_id").notNull(),
+		/** Tool namespace: tools surface as mcp__<name>__<tool>. */
+		name: text("name").notNull(),
+		type: text("type", { enum: ["http", "sse"] })
+			.notNull()
+			.default("http"),
+		url: text("url").notNull(),
+		/** AES-256-GCM blob (AAD = guildId); decrypted only into TaskSpec stdin. */
+		authHeaderEnc: text("auth_header_enc"),
+		enabled: boolean("enabled").notNull().default(true),
+		createdBy: text("created_by").notNull(),
+		createdAt: timestamp("created_at", { withTimezone: true })
+			.notNull()
+			.defaultNow(),
+	},
+	(t) => [primaryKey({ columns: [t.guildId, t.name] })],
 );
 
 /** Squad Mode: N parallel attempts, the server picks the winner. Durable so
  * the vote card is rebuildable after a restart. */
 export const squads = pgTable("squads", {
-  id: text("id").primaryKey(),
-  guildId: text("guild_id").notNull(),
-  channelId: text("channel_id").notNull(),
-  repoFullName: text("repo_full_name").notNull(),
-  prompt: text("prompt").notNull(),
-  requestedBy: text("requested_by").notNull(),
-  attemptTaskIds: jsonb("attempt_task_ids").$type<string[]>().notNull(),
-  status: text("status", {
-    enum: ["running", "voting", "shipped", "failed", "expired"],
-  })
-    .notNull()
-    .default("running"),
-  voteMessageId: text("vote_message_id"),
-  winnerTaskId: text("winner_task_id"),
-  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
+	id: text("id").primaryKey(),
+	guildId: text("guild_id").notNull(),
+	channelId: text("channel_id").notNull(),
+	repoFullName: text("repo_full_name").notNull(),
+	prompt: text("prompt").notNull(),
+	requestedBy: text("requested_by").notNull(),
+	attemptTaskIds: jsonb("attempt_task_ids").$type<string[]>().notNull(),
+	status: text("status", {
+		enum: ["running", "voting", "shipped", "failed", "expired"],
+	})
+		.notNull()
+		.default("running"),
+	voteMessageId: text("vote_message_id"),
+	winnerTaskId: text("winner_task_id"),
+	expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true })
+		.notNull()
+		.defaultNow(),
 });
 
 /** Spectate Stage B event log (deferred feature; table ships now so the
  * protocol release doesn't need a second migration). */
 export const taskEvents = pgTable("task_events", {
-  id: bigserial("id", { mode: "number" }).primaryKey(),
-  taskId: text("task_id").notNull(),
-  seq: integer("seq").notNull(),
-  type: text("type").notNull(),
-  payload: jsonb("payload").notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
+	id: bigserial("id", { mode: "number" }).primaryKey(),
+	taskId: text("task_id").notNull(),
+	seq: integer("seq").notNull(),
+	type: text("type").notNull(),
+	payload: jsonb("payload").notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true })
+		.notNull()
+		.defaultNow(),
 });
 
 export type Guild = typeof guilds.$inferSelect;

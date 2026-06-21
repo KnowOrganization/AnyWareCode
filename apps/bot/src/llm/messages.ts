@@ -234,6 +234,45 @@ export function buildTaskFailureMessage(ctx: MessageContext): string {
 }
 
 /**
+ * Proper-cased, user-facing name for an OpenAI-compatible provider type. Used
+ * by the clear-failure copy that must name the configured provider (Req 7.3).
+ */
+export function openAiCompatibleProviderName(
+	type: "openai" | "openrouter",
+): string {
+	return type === "openai" ? "OpenAI" : "OpenRouter";
+}
+
+/**
+ * Detect a runner preflight or translation-sidecar failure from the runner's
+ * emitted error message. These are the failures that mean the task could not be
+ * executed on the configured OpenAI-compatible provider, so the bot posts the
+ * provider-named clear-failure copy instead of the generic "task failed" line
+ * (Req 7.3, 7.4).
+ */
+export function isPreflightOrTranslatorFailure(message: string): boolean {
+	return /preflight failed|translator/i.test(message);
+}
+
+/**
+ * Build the Task_Path clear-failure message for an OpenAI-compatible provider
+ * whose runner preflight/translator step failed. The message names the
+ * configured provider type and states the task could not run; by construction
+ * it never names another provider type or model and never implies the task was
+ * or will be retried elsewhere (Req 7.3, 7.4).
+ */
+export function buildProviderUnavailableMessage(
+	type: "openai" | "openrouter",
+): string {
+	const name = openAiCompatibleProviderName(type);
+	return sanitizeUserMessage(
+		`⚠️ Couldn't run this task on your configured **${name}** provider. ` +
+			"Nothing was pushed. An admin should re-check the provider and model " +
+			"with `/connect llm` or `/model`, then try again.",
+	);
+}
+
+/**
  * Mention-safe prefix stating the reply was produced by a lighter model due to
  * rate limits, prepended to a Fallback_Model reply on the Chat_Path (Req 6.4).
  */

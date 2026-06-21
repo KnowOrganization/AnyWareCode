@@ -34,6 +34,11 @@ import {
 } from "./launch.js";
 import { handleLinkCommand } from "./link.js";
 import { handleLlmStatusCommand } from "./llm-status.js";
+import {
+	handleModelButton,
+	handleModelCommand,
+	handleModelModal,
+} from "./model.js";
 import { handleMemoryCommand, handleMemoryModal } from "./memory.js";
 import { handleMemorySuggestionButton } from "./memorySuggestions.js";
 import { handleOssCommand } from "./oss.js";
@@ -134,6 +139,8 @@ async function handleCommand(
 			return handleLinkCommand(ctx, interaction);
 		case "llm-status":
 			return handleLlmStatusCommand(ctx, interaction);
+		case "model":
+			return handleModelCommand(ctx, interaction);
 	}
 }
 
@@ -710,6 +717,12 @@ async function handleButton(
 		return;
 	}
 
+	// Model_Selector "Change model" button (no taskId required)
+	if (action === "model") {
+		await handleModelButton(ctx, interaction);
+		return;
+	}
+
 	// Squad vote cards carry a squadId (+ attempt index for Ship)
 	if (action === "squad") {
 		const sub = parts[2];
@@ -997,6 +1010,10 @@ async function handleModal(
 	if (ns !== "aw") return;
 	if (type === "memory_modal") {
 		await handleMemoryModal(ctx, interaction);
+		return;
+	}
+	if (type === "model_modal") {
+		await handleModelModal(ctx, interaction);
 		return;
 	}
 	if (type !== "llm_modal" || !providerType) return;

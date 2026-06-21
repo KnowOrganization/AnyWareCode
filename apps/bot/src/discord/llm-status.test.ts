@@ -240,3 +240,32 @@ describe("handleLlmStatusCommand", () => {
 		);
 	});
 });
+
+describe("status rendering — provider + effective model (Req 9.1, 9.2, 9.6)", () => {
+	it("shows the effective Default_Model for a provider with no Selected_Model", async () => {
+		vi.mocked(resolveLlmAuth).mockResolvedValue({
+			auth: { type: "openai", token: "sk-x", model: "gpt-4o-mini" },
+			source: "guild",
+		});
+		const { interaction, reply } = makeInteraction({ admin: true });
+		await handleLlmStatusCommand(ctx, interaction, {
+			probe: vi.fn(async () => okResult()),
+		});
+		const content = reply.mock.calls[0]?.[0]?.content as string;
+		expect(content).toContain("openai");
+		expect(content).toContain("gpt-4o-mini");
+	});
+
+	it("reports the retrieval failure / reconnect path when the credential is unreadable (Req 9.6)", async () => {
+		vi.mocked(resolveLlmAuth).mockResolvedValue({
+			auth: null,
+			reason: "Stored credential unreadable — admin must run `/connect llm` again.",
+		});
+		const { interaction, reply } = makeInteraction({ admin: true });
+		await handleLlmStatusCommand(ctx, interaction, {
+			probe: vi.fn(async () => okResult()),
+		});
+		const content = reply.mock.calls[0]?.[0]?.content as string;
+		expect(content).toContain("/connect llm");
+	});
+});

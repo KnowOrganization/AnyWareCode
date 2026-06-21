@@ -9,7 +9,7 @@
  */
 
 import { log } from "../observability.js";
-import { buildAnthropicHeaders, type LlmAuth } from "./credentials.js";
+import type { LlmAuth } from "./credentials.js";
 
 /** Wall-clock instant the classifier ran against (epoch ms). Injected so
  *  Reset_Time derivation and clamping are deterministic in tests. */
@@ -97,6 +97,12 @@ function isProviderErrorBody(body: unknown): boolean {
  * for a `decide` tool_use block and the reply path checks for a non-empty text
  * block. When omitted, any 200 body that is not a provider error is treated as
  * conformant.
+ *
+ * `isProviderError` is the adapter-supplied soft-error detector for the 200
+ * path. It defaults to the Anthropic `{type:"error"}` check so existing callers
+ * (and the probe) keep their behavior; the OpenAI-compatible adapter passes a
+ * predicate that always returns `false` (those providers signal errors via HTTP
+ * status, so the status ladder governs entirely).
  */
 export function classifyResponse(args: {
 	status: number;
@@ -104,13 +110,15 @@ export function classifyResponse(args: {
 	body: unknown;
 	receivedAtMs: number;
 	validate?: (body: unknown) => boolean;
+	isProviderError?: (body: unknown) => boolean;
 }): LlmCallResult {
 	const { status, headers, body, receivedAtMs, validate } = args;
+	const isProviderError = args.isProviderError ?? isProviderErrorBody;
 
 	// 200: success only when the body is conformant and not a provider error.
 	if (status === 200) {
 		const conformant =
-			!isProviderErrorBody(body) && (validate ? validate(body) : true);
+			!isProviderError(body) && (validate ? validate(body) : true);
 		if (conformant) {
 			return { ok: true, body };
 		}
@@ -352,12 +360,16 @@ export async function probeModel(args: {
 	const fetchFn = args.fetchFn ?? fetch;
 	const nowMs = args.nowMs ?? (() => Date.now());
 
-	const { url, headers } = buildAnthropicHeaders(auth);
-	const body = JSON.stringify({
-		model: auth.type === "custom" ? auth.model : model,
-		max_tokens: 1,
-		messages: [{ role: "user", content: "ping" }],
-	});
+	// Adapter-aware request construction: the endpoint, auth headers, effective
+	// model, and probe body all come from the provider adapter so OpenAI-compatible
+	// providers probe `/v1/chat/completions` and Anthropic types `/v1/messages`.
+	// Lazy import avoids the providers→chat→failures init cycle (see credentials.ts).
+	const { adapterFor } = await import("./providers/index.js");
+	const adapter = adapterFor(auth);
+	const { url, headers } = adapter.endpoint(auth);
+	const body = JSON.stringify(
+		adapter.buildProbeBody(adapter.effectiveModel(auth, model)),
+	);
 
 	const controller = new AbortController();
 	const timer = setTimeout(() => controller.abort(), timeoutMs);

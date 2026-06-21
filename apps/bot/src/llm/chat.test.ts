@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { LlmAuth } from "./credentials.js";
 import {
 	buildClassifyRequest,
@@ -175,23 +175,32 @@ describe("classifyIntent", () => {
 		}
 	});
 
-	it("maps a 200 missing the decide tool_use block to model_error", async () => {
+	it("falls back to a reply decision when a 200 has no decide block (Req 6.5)", async () => {
 		const res = await classifyIntent(API_KEY_AUTH, "m", ctx(), {
 			fetchFn: async () =>
-				new Response(JSON.stringify({ content: [{ type: "text" }] }), {
-					status: 200,
-				}),
+				new Response(
+					JSON.stringify({
+						content: [{ type: "text", text: "just chatting" }],
+					}),
+					{ status: 200 },
+				),
 		});
-		expect(res.ok).toBe(false);
-		if (!res.ok) expect(res.failure.mode).toBe("model_error");
+		expect(res.ok).toBe(true);
+		if (res.ok) {
+			expect(res.decision.action).toBe("reply");
+			expect(res.decision.reply_text).toBe("just chatting");
+		}
 	});
 
-	it("maps a decision that fails schema validation to model_error", async () => {
+	it("falls back to a safe-default reply when a 200 decision fails schema validation (Req 6.5)", async () => {
 		const res = await classifyIntent(API_KEY_AUTH, "m", ctx(), {
 			fetchFn: async () => okResponse({ action: "code" }),
 		});
-		expect(res.ok).toBe(false);
-		if (!res.ok) expect(res.failure.mode).toBe("model_error");
+		expect(res.ok).toBe(true);
+		if (res.ok) {
+			expect(res.decision.action).toBe("reply");
+			expect((res.decision.reply_text ?? "").length).toBeGreaterThan(0);
+		}
 	});
 
 	it("maps 429 to rate_limited", async () => {
@@ -218,12 +227,15 @@ describe("classifyIntent", () => {
 		if (!res.ok) expect(res.failure.mode).toBe("overloaded");
 	});
 
-	it("maps an unparseable 200 body to model_error", async () => {
+	it("falls back to a safe-default reply on an unparseable 200 body (Req 6.5)", async () => {
 		const res = await classifyIntent(API_KEY_AUTH, "m", ctx(), {
 			fetchFn: async () => new Response("not json{", { status: 200 }),
 		});
-		expect(res.ok).toBe(false);
-		if (!res.ok) expect(res.failure.mode).toBe("model_error");
+		expect(res.ok).toBe(true);
+		if (res.ok) {
+			expect(res.decision.action).toBe("reply");
+			expect((res.decision.reply_text ?? "").length).toBeGreaterThan(0);
+		}
 	});
 
 	it("maps a thrown fetch to network_error", async () => {
@@ -321,6 +333,89 @@ describe("chat-path live case (Req 8.2)", () => {
 		expect(reply.ok).toBe(false);
 		if (!reply.ok) {
 			expect(reply.failure.mode).toBe("rate_limited");
+		}
+	});
+});
+
+describe("classifyIntent — 60s classify timeout (Req 6.7)", () => {
+	// CLASSIFIER_TIMEOUT_SECONDS (60) * 1000 — the value the caller passes as
+	// opts.timeoutMs; fetchWithTimeout arms an AbortController on this deadline.
+	const TIMEOUT_MS = 60_000;
+
+	/**
+	 * A classify fetch that never settles on its own. It rejects only when the
+	 * injected AbortSignal fires — modelling a provider that hangs until the
+	 * classifier deadline cuts the call off. Covers both an already-aborted
+	 * signal and the live `abort` event.
+	 */
+	const neverResolvingFetch: typeof fetch = ((
+		_url: unknown,
+		init?: { signal?: AbortSignal },
+	) =>
+		new Promise<Response>((_resolve, reject) => {
+			const signal = init?.signal;
+			const fail = () =>
+				reject(Object.assign(new Error("aborted"), { name: "AbortError" }));
+			if (signal?.aborted) {
+				fail();
+				return;
+			}
+			signal?.addEventListener("abort", fail);
+			// Otherwise never settles — only the abort path resolves this promise.
+		})) as unknown as typeof fetch;
+
+	beforeEach(() => {
+		vi.useFakeTimers();
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
+	it("stops at the 60s deadline and surfaces network_error without a decision", async () => {
+		const pending = classifyIntent(API_KEY_AUTH, "m", ctx(), {
+			fetchFn: neverResolvingFetch,
+			timeoutMs: TIMEOUT_MS,
+		});
+
+		// Let the lazy provider import resolve and the AbortController timer get
+		// scheduled, then drive the fake clock to the classifier deadline so the
+		// abort fires and the rejection propagates through the microtask queue.
+		await vi.advanceTimersByTimeAsync(0);
+		await vi.advanceTimersByTimeAsync(TIMEOUT_MS);
+
+		const res = await pending;
+
+		// Req 6.7: a timed-out classify resolves to the existing network_error
+		// failure-mode, never `{ ok: true }` — so the caller cannot launch a task.
+		expect(res.ok).toBe(false);
+		if (!res.ok) {
+			expect(res.failure.mode).toBe("network_error");
+		}
+	});
+
+	it("does not abort before the 60s deadline elapses", async () => {
+		const pending = classifyIntent(API_KEY_AUTH, "m", ctx(), {
+			fetchFn: neverResolvingFetch,
+			timeoutMs: TIMEOUT_MS,
+		});
+
+		let settled = false;
+		void pending.then(() => {
+			settled = true;
+		});
+
+		await vi.advanceTimersByTimeAsync(0);
+		// One millisecond shy of the deadline the call is still in flight.
+		await vi.advanceTimersByTimeAsync(TIMEOUT_MS - 1);
+		expect(settled).toBe(false);
+
+		// Crossing the deadline aborts and resolves to a failure (no decision).
+		await vi.advanceTimersByTimeAsync(1);
+		const res = await pending;
+		expect(res.ok).toBe(false);
+		if (!res.ok) {
+			expect(res.failure.mode).toBe("network_error");
 		}
 	});
 });

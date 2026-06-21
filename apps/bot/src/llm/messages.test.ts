@@ -3,8 +3,11 @@ import { describe, expect, it } from "vitest";
 import type { FailureMode, LlmFailure, RateLimitInfo } from "./failures.js";
 import {
 	buildChatFailureMessage,
+	buildProviderUnavailableMessage,
 	buildTaskFailureMessage,
 	formatResetTime,
+	isPreflightOrTranslatorFailure,
+	openAiCompatibleProviderName,
 	type MessageContext,
 } from "./messages.js";
 
@@ -364,5 +367,147 @@ describe("formatResetTime", () => {
 		const { absolute, relative } = formatResetTime(1_700_000_000_500);
 		expect(absolute).toBe("<t:1700000000:F>");
 		expect(relative).toBe("<t:1700000000:R>");
+	});
+});
+
+describe("OpenAI-compatible provider clear-failure copy (Req 7.3, 7.4)", () => {
+	it("names the configured provider type and never another provider/model", () => {
+		const openai = buildProviderUnavailableMessage("openai");
+		expect(openai).toContain("OpenAI");
+		expect(openai).not.toContain("OpenRouter");
+		expect(openai).not.toContain("Anthropic");
+
+		const openrouter = buildProviderUnavailableMessage("openrouter");
+		expect(openrouter).toContain("OpenRouter");
+		expect(openrouter).not.toContain("Anthropic");
+	});
+
+	it("states the task could not run and is mention-safe", () => {
+		for (const type of ["openai", "openrouter"] as const) {
+			const msg = buildProviderUnavailableMessage(type);
+			expect(msg.toLowerCase()).toContain("couldn't run this task");
+			// No active mention tokens leak through.
+			expect(msg).not.toMatch(/@everyone|@here/);
+			expect(msg.length).toBeLessThanOrEqual(2000);
+		}
+	});
+
+	it("maps provider types to proper-cased names", () => {
+		expect(openAiCompatibleProviderName("openai")).toBe("OpenAI");
+		expect(openAiCompatibleProviderName("openrouter")).toBe("OpenRouter");
+	});
+
+	it("detects runner preflight and translator failures", () => {
+		expect(
+			isPreflightOrTranslatorFailure(
+				"Preflight failed: openai auth but ANTHROPIC_MODEL is unset",
+			),
+		).toBe(true);
+		expect(
+			isPreflightOrTranslatorFailure(
+				"translator is unreachable: ECONNREFUSED",
+			),
+		).toBe(true);
+		expect(
+			isPreflightOrTranslatorFailure("translator health check failed: 502"),
+		).toBe(true);
+		// Unrelated runtime errors are not misclassified as preflight/translator.
+		expect(isPreflightOrTranslatorFailure("rate limit exceeded")).toBe(false);
+		expect(
+			isPreflightOrTranslatorFailure("the model returned an error"),
+		).toBe(false);
+	});
+});
+
+describe("unrunnable-task failure messaging — properties", () => {
+	/** The two OpenAI-compatible provider types and their display names. */
+	const OPENAI_COMPATIBLE = {
+		openai: { name: "OpenAI", otherName: "OpenRouter" },
+		openrouter: { name: "OpenRouter", otherName: "OpenAI" },
+	} as const;
+
+	const openAiCompatibleTypeArb = fc.constantFrom(
+		"openai" as const,
+		"openrouter" as const,
+	);
+
+	// Feature: multi-provider-model-switching, Property 17: Unrunnable
+	// OpenAI-compatible task names the provider and persists nothing — for any
+	// OpenAI-compatible provider type, when the runner cannot execute the task
+	// the user-facing failure message names that configured provider type and
+	// no partial task result is persisted. Persistence happens in taskRunner.ts
+	// (settle writes status=failed only, no diff/PR), so the "persists nothing"
+	// aspect is asserted here at the message/contract level: the message states
+	// nothing was pushed and never implies a retry on another provider/model.
+	// Validates: Requirements 7.3
+	it("Property 17: clear-failure message names the configured provider and implies no partial result", () => {
+		fc.assert(
+			fc.property(openAiCompatibleTypeArb, (type) => {
+				const { name, otherName } = OPENAI_COMPATIBLE[type];
+				const msg = buildProviderUnavailableMessage(type);
+
+				// Names the configured provider.
+				expect(msg).toContain(name);
+				// Never names the other OpenAI-compatible provider or Anthropic,
+				// so it cannot imply a retry on a different provider.
+				expect(msg).not.toContain(otherName);
+				expect(msg).not.toContain("Anthropic");
+				expect(msg).not.toContain("anthropic");
+
+				// States the task could not run and that nothing was persisted
+				// (no partial result / diff / PR pushed).
+				const lower = msg.toLowerCase();
+				expect(lower).toContain("couldn't run this task");
+				expect(lower).toContain("nothing was pushed");
+
+				// Mention-safe and within the Discord length budget.
+				expect(hasActiveMention(msg)).toBe(false);
+				expect(msg.length).toBeGreaterThan(0);
+				expect(msg.length).toBeLessThanOrEqual(2000);
+
+				// Display-name mapping is consistent with the message.
+				expect(openAiCompatibleProviderName(type)).toBe(name);
+			}),
+			{ numRuns: 100 },
+		);
+	});
+
+	// Feature: multi-provider-model-switching, Property 17 (gating): the
+	// provider-named clear-failure copy is only emitted for runner failures that
+	// mean the task could not execute on the configured provider — preflight or
+	// translator failures. isPreflightOrTranslatorFailure must detect those and
+	// reject unrelated runtime errors that should map to the generic taxonomy.
+	// Validates: Requirements 7.3
+	it("Property 17: preflight/translator failures gate the provider-named message", () => {
+		// Strings that contain a preflight/translator marker are gated in.
+		const preflightMarkerArb = fc
+			.tuple(
+				fc.string(),
+				fc.constantFrom(
+					"preflight failed",
+					"Preflight Failed",
+					"translator",
+				),
+				fc.string(),
+			)
+			.map(([a, marker, b]) => `${a}${marker}${b}`);
+
+		fc.assert(
+			fc.property(preflightMarkerArb, (message) => {
+				expect(isPreflightOrTranslatorFailure(message)).toBe(true);
+			}),
+			{ numRuns: 100 },
+		);
+
+		// Strings with no preflight/translator marker are not misclassified.
+		const noMarkerArb = fc
+			.string()
+			.filter((s) => !/preflight failed|translator/i.test(s));
+		fc.assert(
+			fc.property(noMarkerArb, (message) => {
+				expect(isPreflightOrTranslatorFailure(message)).toBe(false);
+			}),
+			{ numRuns: 100 },
+		);
 	});
 });
