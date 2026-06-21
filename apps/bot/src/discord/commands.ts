@@ -1,397 +1,470 @@
-import { SlashCommandBuilder } from "discord.js";
+import { PermissionFlagsBits, SlashCommandBuilder } from "discord.js";
 
 export const commands = [
-  new SlashCommandBuilder()
-    .setName("code")
-    .setDescription("Run a coding task against this channel's repo; opens a PR")
-    .addStringOption((opt) =>
-      opt
-        .setName("task")
-        .setDescription("What should the agent do?")
-        .setRequired(true),
-    )
-    .addIntegerOption((opt) =>
-      opt
-        .setName("squad")
-        .setDescription("Squad Mode: N parallel attempts, the server votes (burns N tasks)")
-        .setMinValue(2)
-        .setMaxValue(5)
-        .setRequired(false),
-    )
-    .addBooleanOption((opt) =>
-      opt
-        .setName("plan")
-        .setDescription("Plan first: propose a plan for approval before writing code")
-        .setRequired(false),
-    )
-    .addStringOption((opt) =>
-      opt
-        .setName("model")
-        .setDescription("Model to run (paid plans; BYO providers use their own)")
-        .setRequired(false)
-        .addChoices(
-          { name: "Opus 4.8 (most capable)", value: "claude-opus-4-8" },
-          { name: "Sonnet 4.6 (balanced)", value: "claude-sonnet-4-6" },
-          { name: "Haiku 4.5 (fastest)", value: "claude-haiku-4-5" },
-        ),
-    ),
-  new SlashCommandBuilder()
-    .setName("ask")
-    .setDescription("Ask a question about this channel's repo (read-only)")
-    .addStringOption((opt) =>
-      opt
-        .setName("question")
-        .setDescription("What do you want to know?")
-        .setRequired(true),
-    ),
-  new SlashCommandBuilder()
-    .setName("connect")
-    .setDescription("Connect services to AnyWareCode")
-    .addSubcommand((sub) =>
-      sub
-        .setName("llm")
-        .setDescription(
-          "Connect your LLM (Anthropic API key, Claude subscription, or compatible provider)",
-        ),
-    )
-    .addSubcommand((sub) =>
-      sub
-        .setName("github")
-        .setDescription("Connect GitHub repositories (personal account and orgs)")
-        .addStringOption((opt) =>
-          opt
-            .setName("remove")
-            .setDescription("Unlink an installation by its account/org login")
-            .setRequired(false),
-        ),
-    )
-    .addSubcommand((sub) =>
-      sub
-        .setName("mcp")
-        .setDescription("Attach MCP servers (Sentry, DBs, trackers) to your agent")
-        .addStringOption((opt) =>
-          opt
-            .setName("action")
-            .setDescription("What to do")
-            .setRequired(true)
-            .addChoices(
-              { name: "add", value: "add" },
-              { name: "list", value: "list" },
-              { name: "remove", value: "remove" },
-            ),
-        )
-        .addStringOption((opt) =>
-          opt.setName("name").setDescription("Server name (e.g. sentry)").setRequired(false),
-        )
-        .addStringOption((opt) =>
-          opt.setName("url").setDescription("https URL of the MCP server").setRequired(false),
-        )
-        .addStringOption((opt) =>
-          opt
-            .setName("auth_token")
-            .setDescription("Bearer token (encrypted at rest, never posted)")
-            .setRequired(false),
-        )
-        .addStringOption((opt) =>
-          opt
-            .setName("type")
-            .setDescription("Transport (default http)")
-            .setRequired(false)
-            .addChoices(
-              { name: "http", value: "http" },
-              { name: "sse", value: "sse" },
-            ),
-        ),
-    ),
-  new SlashCommandBuilder()
-    .setName("setup")
-    .setDescription("Show the connection status and usage for this server"),
-  new SlashCommandBuilder()
-    .setName("billing")
-    .setDescription("Show this server's plan, usage, and upgrade link"),
-  new SlashCommandBuilder()
-    .setName("oss")
-    .setDescription("OSS Community tier (free for public open-source servers)")
-    .addSubcommand((sub) =>
-      sub
-        .setName("apply")
-        .setDescription("Apply for the free OSS Community tier"),
-    ),
-  new SlashCommandBuilder()
-    .setName("repo")
-    .setDescription("Manage the repo this channel works on")
-    .addSubcommand((sub) =>
-      sub
-        .setName("set")
-        .setDescription("Set the active repo for this channel")
-        .addStringOption((opt) =>
-          opt
-            .setName("name")
-            .setDescription("owner/repo")
-            .setRequired(true)
-            .setAutocomplete(true),
-        ),
-    )
-    .addSubcommand((sub) =>
-      sub.setName("show").setDescription("Show this channel's active repo"),
-    ),
-  new SlashCommandBuilder()
-    .setName("memory")
-    .setDescription("Server Memory: per-repo conventions loaded into every run")
-    .addSubcommand((sub) =>
-      sub.setName("view").setDescription("Show this channel's repo memory"),
-    )
-    .addSubcommand((sub) =>
-      sub.setName("edit").setDescription("Edit the full memory doc (modal)"),
-    )
-    .addSubcommand((sub) =>
-      sub
-        .setName("add")
-        .setDescription("Append a one-line rule")
-        .addStringOption((opt) =>
-          opt
-            .setName("rule")
-            .setDescription('e.g. "we use pnpm, never npm"')
-            .setRequired(true),
-        ),
-    )
-    .addSubcommand((sub) =>
-      sub.setName("clear").setDescription("Delete this repo's memory"),
-    )
-    .addSubcommand((sub) =>
-      sub
-        .setName("commit")
-        .setDescription("Open a PR merging this memory into the repo's AGENTS.md"),
-    )
-    .addSubcommand((sub) =>
-      sub
-        .setName("template")
-        .setDescription("Start from a template")
-        .addStringOption((opt) =>
-          opt
-            .setName("name")
-            .setDescription("Template")
-            .setRequired(true)
-            .addChoices(
-              { name: "general", value: "general" },
-              { name: "godot-gdscript", value: "godot-gdscript" },
-              { name: "unity-csharp", value: "unity-csharp" },
-            ),
-        ),
-    ),
-  new SlashCommandBuilder()
-    .setName("link")
-    .setDescription("Verify your identity for provenance receipts")
-    .addSubcommand((sub) =>
-      sub
-        .setName("github")
-        .setDescription("Link your GitHub account (only your public login is stored)"),
-    )
-    .addSubcommand((sub) =>
-      sub.setName("remove").setDescription("Unlink your GitHub account"),
-    ),
-  new SlashCommandBuilder()
-    .setName("standup")
-    .setDescription("Voice → PR: listen in a voice channel and turn action items into proposals")
-    .addSubcommand((sub) =>
-      sub
-        .setName("start")
-        .setDescription("Start recording (Studio tier; run in a repo-bound text channel while in voice)"),
-    )
-    .addSubcommand((sub) =>
-      sub.setName("stop").setDescription("Stop the session and post the action items"),
-    ),
-  new SlashCommandBuilder()
-    .setName("schedule")
-    .setDescription("Recurring tasks that arrive as morning proposal cards")
-    .addSubcommand((sub) =>
-      sub
-        .setName("add")
-        .setDescription("Add a recurring task (posts a Run/Dismiss card; never runs unattended)")
-        .addStringOption((opt) =>
-          opt
-            .setName("prompt")
-            .setDescription("Task for the agent, e.g. 'bump dependencies and fix breakage'")
-            .setRequired(true),
-        )
-        .addStringOption((opt) =>
-          opt
-            .setName("cadence")
-            .setDescription("How often")
-            .setRequired(true)
-            .addChoices(
-              { name: "daily", value: "daily" },
-              { name: "weekly", value: "weekly" },
-            ),
-        )
-        .addIntegerOption((opt) =>
-          opt
-            .setName("hour_utc")
-            .setDescription("Hour of day, UTC (0-23)")
-            .setMinValue(0)
-            .setMaxValue(23)
-            .setRequired(true),
-        )
-        .addIntegerOption((opt) =>
-          opt
-            .setName("day")
-            .setDescription("Weekly only: 0 = Sunday … 6 = Saturday")
-            .setMinValue(0)
-            .setMaxValue(6)
-            .setRequired(false),
-        ),
-    )
-    .addSubcommand((sub) =>
-      sub.setName("list").setDescription("List this server's schedules"),
-    )
-    .addSubcommand((sub) =>
-      sub
-        .setName("remove")
-        .setDescription("Remove a schedule")
-        .addStringOption((opt) =>
-          opt.setName("id").setDescription("Schedule id from /schedule list").setRequired(true),
-        ),
-    ),
-  new SlashCommandBuilder()
-    .setName("review")
-    .setDescription("Have the agent review a pull request (read-only, /ask quota)")
-    .addIntegerOption((opt) =>
-      opt
-        .setName("pr")
-        .setDescription("Pull request number on this channel's repo")
-        .setMinValue(1)
-        .setRequired(true),
-    ),
-  new SlashCommandBuilder()
-    .setName("status")
-    .setDescription("Show running and queued tasks in this server"),
-  new SlashCommandBuilder()
-    .setName("cancel")
-    .setDescription("Cancel the task running in this thread"),
-  new SlashCommandBuilder()
-    .setName("config")
-    .setDescription("Configure AnyWareCode for this server")
-    .addSubcommand((sub) =>
-      sub
-        .setName("role")
-        .setDescription("Set which role may invoke /code (default: admins only)")
-        .addRoleOption((opt) =>
-          opt
-            .setName("role")
-            .setDescription("Role to allow; omit to reset to admins only")
-            .setRequired(false),
-        ),
-    )
-    .addSubcommand((sub) =>
-      sub
-        .setName("sponsors")
-        .setDescription("Require sponsors of code tasks to have a linked GitHub identity")
-        .addBooleanOption((opt) =>
-          opt
-            .setName("linked")
-            .setDescription("true = members must /link github before running code tasks")
-            .setRequired(true),
-        ),
-    )
-    .addSubcommand((sub) =>
-      sub
-        .setName("planvotes")
-        .setDescription("Require team approval of the agent's plan before code tasks run")
-        .addStringOption((opt) =>
-          opt
-            .setName("mode")
-            .setDescription("Approval mode")
-            .setRequired(true)
-            .addChoices(
-              { name: "instant (no vote)", value: "instant" },
-              { name: "one approval", value: "one_approval" },
-              { name: "role-gated", value: "role_gated" },
-            ),
-        )
-        .addRoleOption((opt) =>
-          opt
-            .setName("role")
-            .setDescription("Approver role (role-gated mode; admins always may)")
-            .setRequired(false),
-        ),
-    )
-    .addSubcommand((sub) =>
-      sub
-        .setName("review")
-        .setDescription("Auto-review every opened PR on a repo")
-        .addStringOption((opt) =>
-          opt
-            .setName("repo")
-            .setDescription("owner/repo")
-            .setRequired(true)
-            .setAutocomplete(true),
-        )
-        .addChannelOption((opt) =>
-          opt
-            .setName("channel")
-            .setDescription("Channel for review summaries; omit to turn auto-review off")
-            .setRequired(false),
-        ),
-    )
-    .addSubcommand((sub) =>
-      sub
-        .setName("shiplog")
-        .setDescription("Auto-post merged agent PRs to a channel (build in public)")
-        .addChannelOption((opt) =>
-          opt
-            .setName("channel")
-            .setDescription("Ship-log channel; omit to turn it off")
-            .setRequired(false),
-        ),
-    )
-    .addSubcommand((sub) =>
-      sub
-        .setName("issues")
-        .setDescription("Feed new GitHub issues into a channel as Run/Dismiss cards")
-        .addStringOption((opt) =>
-          opt
-            .setName("repo")
-            .setDescription("owner/repo")
-            .setRequired(true)
-            .setAutocomplete(true),
-        )
-        .addChannelOption((opt) =>
-          opt
-            .setName("channel")
-            .setDescription("Channel for issue cards; omit to turn the feed off")
-            .setRequired(false),
-        )
-        .addStringOption((opt) =>
-          opt
-            .setName("labels")
-            .setDescription("Comma-separated label allowlist (empty = all issues)")
-            .setRequired(false),
-        )
-        .addStringOption((opt) =>
-          opt
-            .setName("trust")
-            .setDescription("Minimum issue-author trust")
-            .setRequired(false)
-            .addChoices(
-              { name: "anyone", value: "any" },
-              { name: "contributors+", value: "contributor" },
-              { name: "org members+", value: "member" },
-              { name: "owners only", value: "owner" },
-            ),
-        )
-        .addIntegerOption((opt) =>
-          opt
-            .setName("daily_cap")
-            .setDescription("Max cards per UTC day (default 10)")
-            .setMinValue(1)
-            .setMaxValue(50)
-            .setRequired(false),
-        )
-        .addBooleanOption((opt) =>
-          opt
-            .setName("repro")
-            .setDescription("Repro Gate: verify each report in the sandbox first (uses /ask quota)")
-            .setRequired(false),
-        ),
-    ),
+	new SlashCommandBuilder()
+		.setName("code")
+		.setDescription(
+			"Run a coding task against this channel's repo; opens a PR",
+		)
+		.addStringOption((opt) =>
+			opt
+				.setName("task")
+				.setDescription("What should the agent do?")
+				.setRequired(true),
+		)
+		.addIntegerOption((opt) =>
+			opt
+				.setName("squad")
+				.setDescription(
+					"Squad Mode: N parallel attempts, the server votes (burns N tasks)",
+				)
+				.setMinValue(2)
+				.setMaxValue(5)
+				.setRequired(false),
+		)
+		.addBooleanOption((opt) =>
+			opt
+				.setName("plan")
+				.setDescription(
+					"Plan first: propose a plan for approval before writing code",
+				)
+				.setRequired(false),
+		)
+		.addStringOption((opt) =>
+			opt
+				.setName("model")
+				.setDescription(
+					"Model to run (paid plans; BYO providers use their own)",
+				)
+				.setRequired(false)
+				.addChoices(
+					{ name: "Opus 4.8 (most capable)", value: "claude-opus-4-8" },
+					{ name: "Sonnet 4.6 (balanced)", value: "claude-sonnet-4-6" },
+					{ name: "Haiku 4.5 (fastest)", value: "claude-haiku-4-5" },
+				),
+		),
+	new SlashCommandBuilder()
+		.setName("ask")
+		.setDescription("Ask a question about this channel's repo (read-only)")
+		.addStringOption((opt) =>
+			opt
+				.setName("question")
+				.setDescription("What do you want to know?")
+				.setRequired(true),
+		),
+	new SlashCommandBuilder()
+		.setName("connect")
+		.setDescription("Connect services to AnyWareCode")
+		.addSubcommand((sub) =>
+			sub
+				.setName("llm")
+				.setDescription(
+					"Connect your LLM (Anthropic API key, Claude subscription, or compatible provider)",
+				),
+		)
+		.addSubcommand((sub) =>
+			sub
+				.setName("github")
+				.setDescription(
+					"Connect GitHub repositories (personal account and orgs)",
+				)
+				.addStringOption((opt) =>
+					opt
+						.setName("remove")
+						.setDescription(
+							"Unlink an installation by its account/org login",
+						)
+						.setRequired(false),
+				),
+		)
+		.addSubcommand((sub) =>
+			sub
+				.setName("mcp")
+				.setDescription(
+					"Attach MCP servers (Sentry, DBs, trackers) to your agent",
+				)
+				.addStringOption((opt) =>
+					opt
+						.setName("action")
+						.setDescription("What to do")
+						.setRequired(true)
+						.addChoices(
+							{ name: "add", value: "add" },
+							{ name: "list", value: "list" },
+							{ name: "remove", value: "remove" },
+						),
+				)
+				.addStringOption((opt) =>
+					opt
+						.setName("name")
+						.setDescription("Server name (e.g. sentry)")
+						.setRequired(false),
+				)
+				.addStringOption((opt) =>
+					opt
+						.setName("url")
+						.setDescription("https URL of the MCP server")
+						.setRequired(false),
+				)
+				.addStringOption((opt) =>
+					opt
+						.setName("auth_token")
+						.setDescription(
+							"Bearer token (encrypted at rest, never posted)",
+						)
+						.setRequired(false),
+				)
+				.addStringOption((opt) =>
+					opt
+						.setName("type")
+						.setDescription("Transport (default http)")
+						.setRequired(false)
+						.addChoices(
+							{ name: "http", value: "http" },
+							{ name: "sse", value: "sse" },
+						),
+				),
+		),
+	new SlashCommandBuilder()
+		.setName("setup")
+		.setDescription("Show the connection status and usage for this server"),
+	new SlashCommandBuilder()
+		.setName("billing")
+		.setDescription("Show this server's plan, usage, and upgrade link"),
+	new SlashCommandBuilder()
+		.setName("oss")
+		.setDescription(
+			"OSS Community tier (free for public open-source servers)",
+		)
+		.addSubcommand((sub) =>
+			sub
+				.setName("apply")
+				.setDescription("Apply for the free OSS Community tier"),
+		),
+	new SlashCommandBuilder()
+		.setName("repo")
+		.setDescription("Manage the repo this channel works on")
+		.addSubcommand((sub) =>
+			sub
+				.setName("set")
+				.setDescription("Set the active repo for this channel")
+				.addStringOption((opt) =>
+					opt
+						.setName("name")
+						.setDescription("owner/repo")
+						.setRequired(true)
+						.setAutocomplete(true),
+				),
+		)
+		.addSubcommand((sub) =>
+			sub.setName("show").setDescription("Show this channel's active repo"),
+		),
+	new SlashCommandBuilder()
+		.setName("memory")
+		.setDescription(
+			"Server Memory: per-repo conventions loaded into every run",
+		)
+		.addSubcommand((sub) =>
+			sub.setName("view").setDescription("Show this channel's repo memory"),
+		)
+		.addSubcommand((sub) =>
+			sub.setName("edit").setDescription("Edit the full memory doc (modal)"),
+		)
+		.addSubcommand((sub) =>
+			sub
+				.setName("add")
+				.setDescription("Append a one-line rule")
+				.addStringOption((opt) =>
+					opt
+						.setName("rule")
+						.setDescription('e.g. "we use pnpm, never npm"')
+						.setRequired(true),
+				),
+		)
+		.addSubcommand((sub) =>
+			sub.setName("clear").setDescription("Delete this repo's memory"),
+		)
+		.addSubcommand((sub) =>
+			sub
+				.setName("commit")
+				.setDescription(
+					"Open a PR merging this memory into the repo's AGENTS.md",
+				),
+		)
+		.addSubcommand((sub) =>
+			sub
+				.setName("template")
+				.setDescription("Start from a template")
+				.addStringOption((opt) =>
+					opt
+						.setName("name")
+						.setDescription("Template")
+						.setRequired(true)
+						.addChoices(
+							{ name: "general", value: "general" },
+							{ name: "godot-gdscript", value: "godot-gdscript" },
+							{ name: "unity-csharp", value: "unity-csharp" },
+						),
+				),
+		),
+	new SlashCommandBuilder()
+		.setName("link")
+		.setDescription("Verify your identity for provenance receipts")
+		.addSubcommand((sub) =>
+			sub
+				.setName("github")
+				.setDescription(
+					"Link your GitHub account (only your public login is stored)",
+				),
+		)
+		.addSubcommand((sub) =>
+			sub.setName("remove").setDescription("Unlink your GitHub account"),
+		),
+	new SlashCommandBuilder()
+		.setName("standup")
+		.setDescription(
+			"Voice → PR: listen in a voice channel and turn action items into proposals",
+		)
+		.addSubcommand((sub) =>
+			sub
+				.setName("start")
+				.setDescription(
+					"Start recording (Studio tier; run in a repo-bound text channel while in voice)",
+				),
+		)
+		.addSubcommand((sub) =>
+			sub
+				.setName("stop")
+				.setDescription("Stop the session and post the action items"),
+		),
+	new SlashCommandBuilder()
+		.setName("schedule")
+		.setDescription("Recurring tasks that arrive as morning proposal cards")
+		.addSubcommand((sub) =>
+			sub
+				.setName("add")
+				.setDescription(
+					"Add a recurring task (posts a Run/Dismiss card; never runs unattended)",
+				)
+				.addStringOption((opt) =>
+					opt
+						.setName("prompt")
+						.setDescription(
+							"Task for the agent, e.g. 'bump dependencies and fix breakage'",
+						)
+						.setRequired(true),
+				)
+				.addStringOption((opt) =>
+					opt
+						.setName("cadence")
+						.setDescription("How often")
+						.setRequired(true)
+						.addChoices(
+							{ name: "daily", value: "daily" },
+							{ name: "weekly", value: "weekly" },
+						),
+				)
+				.addIntegerOption((opt) =>
+					opt
+						.setName("hour_utc")
+						.setDescription("Hour of day, UTC (0-23)")
+						.setMinValue(0)
+						.setMaxValue(23)
+						.setRequired(true),
+				)
+				.addIntegerOption((opt) =>
+					opt
+						.setName("day")
+						.setDescription("Weekly only: 0 = Sunday … 6 = Saturday")
+						.setMinValue(0)
+						.setMaxValue(6)
+						.setRequired(false),
+				),
+		)
+		.addSubcommand((sub) =>
+			sub.setName("list").setDescription("List this server's schedules"),
+		)
+		.addSubcommand((sub) =>
+			sub
+				.setName("remove")
+				.setDescription("Remove a schedule")
+				.addStringOption((opt) =>
+					opt
+						.setName("id")
+						.setDescription("Schedule id from /schedule list")
+						.setRequired(true),
+				),
+		),
+	new SlashCommandBuilder()
+		.setName("review")
+		.setDescription(
+			"Have the agent review a pull request (read-only, /ask quota)",
+		)
+		.addIntegerOption((opt) =>
+			opt
+				.setName("pr")
+				.setDescription("Pull request number on this channel's repo")
+				.setMinValue(1)
+				.setRequired(true),
+		),
+	new SlashCommandBuilder()
+		.setName("status")
+		.setDescription("Show running and queued tasks in this server"),
+	new SlashCommandBuilder()
+		.setName("cancel")
+		.setDescription("Cancel the task running in this thread"),
+	new SlashCommandBuilder()
+		.setName("config")
+		.setDescription("Configure AnyWareCode for this server")
+		.addSubcommand((sub) =>
+			sub
+				.setName("role")
+				.setDescription(
+					"Set which role may invoke /code (default: admins only)",
+				)
+				.addRoleOption((opt) =>
+					opt
+						.setName("role")
+						.setDescription("Role to allow; omit to reset to admins only")
+						.setRequired(false),
+				),
+		)
+		.addSubcommand((sub) =>
+			sub
+				.setName("sponsors")
+				.setDescription(
+					"Require sponsors of code tasks to have a linked GitHub identity",
+				)
+				.addBooleanOption((opt) =>
+					opt
+						.setName("linked")
+						.setDescription(
+							"true = members must /link github before running code tasks",
+						)
+						.setRequired(true),
+				),
+		)
+		.addSubcommand((sub) =>
+			sub
+				.setName("planvotes")
+				.setDescription(
+					"Require team approval of the agent's plan before code tasks run",
+				)
+				.addStringOption((opt) =>
+					opt
+						.setName("mode")
+						.setDescription("Approval mode")
+						.setRequired(true)
+						.addChoices(
+							{ name: "instant (no vote)", value: "instant" },
+							{ name: "one approval", value: "one_approval" },
+							{ name: "role-gated", value: "role_gated" },
+						),
+				)
+				.addRoleOption((opt) =>
+					opt
+						.setName("role")
+						.setDescription(
+							"Approver role (role-gated mode; admins always may)",
+						)
+						.setRequired(false),
+				),
+		)
+		.addSubcommand((sub) =>
+			sub
+				.setName("review")
+				.setDescription("Auto-review every opened PR on a repo")
+				.addStringOption((opt) =>
+					opt
+						.setName("repo")
+						.setDescription("owner/repo")
+						.setRequired(true)
+						.setAutocomplete(true),
+				)
+				.addChannelOption((opt) =>
+					opt
+						.setName("channel")
+						.setDescription(
+							"Channel for review summaries; omit to turn auto-review off",
+						)
+						.setRequired(false),
+				),
+		)
+		.addSubcommand((sub) =>
+			sub
+				.setName("shiplog")
+				.setDescription(
+					"Auto-post merged agent PRs to a channel (build in public)",
+				)
+				.addChannelOption((opt) =>
+					opt
+						.setName("channel")
+						.setDescription("Ship-log channel; omit to turn it off")
+						.setRequired(false),
+				),
+		)
+		.addSubcommand((sub) =>
+			sub
+				.setName("issues")
+				.setDescription(
+					"Feed new GitHub issues into a channel as Run/Dismiss cards",
+				)
+				.addStringOption((opt) =>
+					opt
+						.setName("repo")
+						.setDescription("owner/repo")
+						.setRequired(true)
+						.setAutocomplete(true),
+				)
+				.addChannelOption((opt) =>
+					opt
+						.setName("channel")
+						.setDescription(
+							"Channel for issue cards; omit to turn the feed off",
+						)
+						.setRequired(false),
+				)
+				.addStringOption((opt) =>
+					opt
+						.setName("labels")
+						.setDescription(
+							"Comma-separated label allowlist (empty = all issues)",
+						)
+						.setRequired(false),
+				)
+				.addStringOption((opt) =>
+					opt
+						.setName("trust")
+						.setDescription("Minimum issue-author trust")
+						.setRequired(false)
+						.addChoices(
+							{ name: "anyone", value: "any" },
+							{ name: "contributors+", value: "contributor" },
+							{ name: "org members+", value: "member" },
+							{ name: "owners only", value: "owner" },
+						),
+				)
+				.addIntegerOption((opt) =>
+					opt
+						.setName("daily_cap")
+						.setDescription("Max cards per UTC day (default 10)")
+						.setMinValue(1)
+						.setMaxValue(50)
+						.setRequired(false),
+				)
+				.addBooleanOption((opt) =>
+					opt
+						.setName("repro")
+						.setDescription(
+							"Repro Gate: verify each report in the sandbox first (uses /ask quota)",
+						)
+						.setRequired(false),
+				),
+		),
+	new SlashCommandBuilder()
+		.setName("llm-status")
+		.setDescription(
+			"Admin: probe each model tier and report the connected LLM's health",
+		)
+		.setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
 ].map((builder) => builder.toJSON());
