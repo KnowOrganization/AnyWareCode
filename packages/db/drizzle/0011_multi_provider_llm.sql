@@ -1,0 +1,16 @@
+-- Multi-provider model switching: widen the set of accepted LLM provider types
+-- to include "openai" and "openrouter", and re-scope guilds.llm_model to be the
+-- Selected_Model for EVERY provider type (previously documented as custom-only).
+--
+-- guilds.llm_provider_type is a plain `text` column (see 0002) — the allowed
+-- values are enforced at the application/Drizzle layer, not by a Postgres enum
+-- type or CHECK constraint. Widening the accepted set is therefore additive and
+-- requires no DDL: existing rows and their llm_model values are preserved as-is,
+-- and the column already accepts the two new values. Hand-authored to match the
+-- 0008/0009/0010 convention; this statement is an explicit, idempotent no-op
+-- that records the widening in the migration history.
+--
+-- If a CHECK constraint is ever introduced for this column, replace the no-op
+-- below with the corresponding additive `ALTER TABLE ... ADD CONSTRAINT ... CHECK`
+-- (or Postgres `ALTER TYPE ... ADD VALUE` if migrated to a native enum).
+SELECT 1;

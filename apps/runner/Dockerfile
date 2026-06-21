@@ -9,6 +9,9 @@ RUN pnpm install --frozen-lockfile --filter @anywarecode/runner...
 COPY tsconfig.base.json ./
 COPY packages/shared packages/shared
 COPY apps/runner apps/runner
+# Compiles the whole runner src tree — including the in-process
+# Messages↔Chat-Completions translation sidecar (translator.ts → dist/translator.js)
+# that openai/openrouter tasks start on 127.0.0.1 — into /runner/dist.
 RUN pnpm --filter @anywarecode/shared build && pnpm --filter @anywarecode/runner build
 RUN pnpm --filter @anywarecode/runner --prod deploy --legacy /out
 

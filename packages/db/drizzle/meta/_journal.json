@@ -1,83 +1,90 @@
 {
-  "version": "7",
-  "dialect": "postgresql",
-  "entries": [
-    {
-      "idx": 0,
-      "version": "7",
-      "when": 1781074265460,
-      "tag": "0000_familiar_professor_monster",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1781077322364,
-      "tag": "0001_broad_vengeance",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1781098142703,
-      "tag": "0002_misty_cassandra_nova",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1781159974899,
-      "tag": "0003_cloudy_zarda",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "7",
-      "when": 1781168624960,
-      "tag": "0004_dapper_prism",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "7",
-      "when": 1781258902972,
-      "tag": "0005_wonderful_puma",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "7",
-      "when": 1781268468228,
-      "tag": "0006_broad_sleepwalker",
-      "breakpoints": true
-    },
-    {
-      "idx": 7,
-      "version": "7",
-      "when": 1781284082553,
-      "tag": "0007_rainy_shinobi_shaw",
-      "breakpoints": true
-    },
-    {
-      "idx": 8,
-      "version": "7",
-      "when": 1781340000000,
-      "tag": "0008_razorpay_admin",
-      "breakpoints": true
-    },
-    {
-      "idx": 9,
-      "version": "7",
-      "when": 1781420000000,
-      "tag": "0009_byo_free_tier",
-      "breakpoints": true
-    },
-    {
-      "idx": 10,
-      "version": "7",
-      "when": 1781500000000,
-      "tag": "0010_guild_name",
-      "breakpoints": true
-    }
-  ]
+	"version": "7",
+	"dialect": "postgresql",
+	"entries": [
+		{
+			"idx": 0,
+			"version": "7",
+			"when": 1781074265460,
+			"tag": "0000_familiar_professor_monster",
+			"breakpoints": true
+		},
+		{
+			"idx": 1,
+			"version": "7",
+			"when": 1781077322364,
+			"tag": "0001_broad_vengeance",
+			"breakpoints": true
+		},
+		{
+			"idx": 2,
+			"version": "7",
+			"when": 1781098142703,
+			"tag": "0002_misty_cassandra_nova",
+			"breakpoints": true
+		},
+		{
+			"idx": 3,
+			"version": "7",
+			"when": 1781159974899,
+			"tag": "0003_cloudy_zarda",
+			"breakpoints": true
+		},
+		{
+			"idx": 4,
+			"version": "7",
+			"when": 1781168624960,
+			"tag": "0004_dapper_prism",
+			"breakpoints": true
+		},
+		{
+			"idx": 5,
+			"version": "7",
+			"when": 1781258902972,
+			"tag": "0005_wonderful_puma",
+			"breakpoints": true
+		},
+		{
+			"idx": 6,
+			"version": "7",
+			"when": 1781268468228,
+			"tag": "0006_broad_sleepwalker",
+			"breakpoints": true
+		},
+		{
+			"idx": 7,
+			"version": "7",
+			"when": 1781284082553,
+			"tag": "0007_rainy_shinobi_shaw",
+			"breakpoints": true
+		},
+		{
+			"idx": 8,
+			"version": "7",
+			"when": 1781340000000,
+			"tag": "0008_razorpay_admin",
+			"breakpoints": true
+		},
+		{
+			"idx": 9,
+			"version": "7",
+			"when": 1781420000000,
+			"tag": "0009_byo_free_tier",
+			"breakpoints": true
+		},
+		{
+			"idx": 10,
+			"version": "7",
+			"when": 1781500000000,
+			"tag": "0010_guild_name",
+			"breakpoints": true
+		},
+		{
+			"idx": 11,
+			"version": "7",
+			"when": 1781580000000,
+			"tag": "0011_multi_provider_llm",
+			"breakpoints": true
+		}
+	]
 }

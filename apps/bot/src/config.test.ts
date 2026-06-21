@@ -43,3 +43,25 @@ describe("loadConfig rate-limit-resilience defaults", () => {
 		expect(cfg.CLASSIFIER_TIMEOUT_SECONDS).toBe(60);
 	});
 });
+
+describe("loadConfig per-provider default-model keys", () => {
+	it("defaults OPENAI_DEFAULT_MODEL to gpt-4o-mini", () => {
+		const cfg = loadConfig(minimalEnv());
+		expect(cfg.OPENAI_DEFAULT_MODEL).toBe("gpt-4o-mini");
+	});
+
+	it("defaults OPENROUTER_DEFAULT_MODEL to openrouter/auto", () => {
+		const cfg = loadConfig(minimalEnv());
+		expect(cfg.OPENROUTER_DEFAULT_MODEL).toBe("openrouter/auto");
+	});
+
+	it("honors explicit overrides for the per-provider default models", () => {
+		const cfg = loadConfig({
+			...minimalEnv(),
+			OPENAI_DEFAULT_MODEL: "gpt-4o",
+			OPENROUTER_DEFAULT_MODEL: "anthropic/claude-3.5-sonnet",
+		});
+		expect(cfg.OPENAI_DEFAULT_MODEL).toBe("gpt-4o");
+		expect(cfg.OPENROUTER_DEFAULT_MODEL).toBe("anthropic/claude-3.5-sonnet");
+	});
+});

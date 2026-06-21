@@ -20,6 +20,7 @@
 import { type ChatInputCommandInteraction, MessageFlags } from "discord.js";
 import type { BotContext } from "./interactions.js";
 import { resolveLlmAuth } from "../llm/credentials.js";
+import { effectiveModel } from "../llm/providers/defaults.js";
 import { probeModel, type LlmCallResult } from "../llm/failures.js";
 import { callWithRetry } from "../llm/retry.js";
 import { formatResetTime, sanitizeUserMessage } from "../llm/messages.js";
@@ -40,6 +41,8 @@ interface TierProbe {
 interface ProbeCacheEntry {
 	atMs: number;
 	providerType: string;
+	/** Effective model = Selected_Model when set, else the provider Default_Model (Req 9.2). */
+	effectiveModel: string;
 	tiers: TierProbe[];
 }
 
@@ -98,7 +101,7 @@ function renderTierLine(probe: TierProbe): string {
  */
 function renderReport(entry: ProbeCacheEntry): string {
 	const lines = [
-		`**LLM status** — provider: \`${entry.providerType}\``,
+		`**LLM status** — provider: \`${entry.providerType}\`, model: \`${entry.effectiveModel}\``,
 		...entry.tiers.map(renderTierLine),
 	];
 	return sanitizeUserMessage(lines.join("\n"));
@@ -159,6 +162,17 @@ export async function handleLlmStatusCommand(
 	}
 	const { auth } = resolved;
 
+	// Effective model for the configured provider (Req 9.1, 9.2): the guild's
+	// Selected_Model when set, else the provider Default_Model. `resolveLlmAuth`
+	// already carries the resolved Selected_Model on the providers that have one
+	// (custom/openai/openrouter); the Anthropic legacy types fall back to the
+	// Default_Model.
+	const effModel = effectiveModel(
+		auth.type,
+		"model" in auth ? auth.model : null,
+		ctx.config,
+	);
+
 	// 5) Probe each configured Model_Tier, each wrapped once by callWithRetry
 	//    with a 10s per-probe timeout (Req 11.2).
 	const tierSpecs: { tier: TierProbe["tier"]; model: string }[] = [
@@ -181,6 +195,7 @@ export async function handleLlmStatusCommand(
 	const entry: ProbeCacheEntry = {
 		atMs: nowMs(),
 		providerType: auth.type,
+		effectiveModel: effModel,
 		tiers,
 	};
 	probeCache.set(guildId, entry);

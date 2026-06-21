@@ -467,4 +467,14 @@ export const commands = [
 			"Admin: probe each model tier and report the connected LLM's health",
 		)
 		.setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
+	new SlashCommandBuilder()
+		.setName("model")
+		.setDescription("Admin: view or change the model your provider runs")
+		.setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+		.addStringOption((opt) =>
+			opt
+				.setName("model")
+				.setDescription("New model id (leave blank to view current)")
+				.setRequired(false),
+		),
 ].map((builder) => builder.toJSON());
