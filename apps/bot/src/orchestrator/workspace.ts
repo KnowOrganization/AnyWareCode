@@ -84,18 +84,17 @@ export class DockerWorkspace implements Workspace {
     container.modem.demuxStream(stream, stdout, stderr);
     stderr.resume(); // drain; runner debug output goes to the bot's logs only
 
-    // demuxStream copies data but NEVER propagates end-of-stream: without
-    // this, a finished container leaves `stdout` open forever, the events
-    // loop hangs, and the task's concurrency slot leaks until a restart.
+    // demuxStream never propagates end-of-stream to `stdout`. We use
+    // container.wait() as the sole signal that the container has actually
+    // exited. The attach stream's close/end events fire prematurely in
+    // production (attach socket reset while the container is still running),
+    // and calling finish() on them was causing the events iterable to end
+    // 2 seconds after container start while the container ran for minutes.
     const finish = (): void => {
       stdout.end();
       stderr.end();
     };
-    stream.on("end", finish);
-    stream.on("close", finish);
-    stream.on("error", finish);
-    // Belt-and-braces: AutoRemove can tear the attach stream down without a
-    // clean end; the wait() promise settles on exit either way.
+    stream.on("error", finish); // Real I/O error — give up.
     void container.wait().then(finish, finish);
 
     await container.start();
