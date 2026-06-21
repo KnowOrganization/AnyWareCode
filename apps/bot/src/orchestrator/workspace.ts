@@ -84,18 +84,34 @@ export class DockerWorkspace implements Workspace {
     container.modem.demuxStream(stream, stdout, stderr);
     stderr.resume(); // drain; runner debug output goes to the bot's logs only
 
-    // demuxStream never propagates end-of-stream to `stdout`. We use
-    // container.wait() as the sole signal that the container has actually
-    // exited. The attach stream's close/end events fire prematurely in
-    // production (attach socket reset while the container is still running),
-    // and calling finish() on them was causing the events iterable to end
-    // 2 seconds after container start while the container ran for minutes.
+    // demuxStream never propagates end-of-stream. We poll container state to
+    // reliably detect exit. Both container.wait() and the attach stream's
+    // close/end/error events drop prematurely in production (Docker socket
+    // resets while the container is still running), so we cannot trust any
+    // single signal — we must verify via inspect() before ending stdout.
     const finish = (): void => {
       stdout.end();
       stderr.end();
     };
-    stream.on("error", finish); // Real I/O error — give up.
-    void container.wait().then(finish, finish);
+    const waitUntilExit = async (): Promise<void> => {
+      for (;;) {
+        try {
+          await container.wait();
+          return; // clean exit
+        } catch {
+          // wait() connection dropped; check whether the container is still running.
+        }
+        try {
+          const info = await container.inspect();
+          if (!info.State.Running) return; // stopped (AutoRemove may not have fired yet)
+          // Still running — brief pause before retrying wait().
+          await new Promise<void>((r) => setTimeout(r, 2000));
+        } catch {
+          return; // inspect() failed → container gone (AutoRemove destroyed it)
+        }
+      }
+    };
+    void waitUntilExit().then(finish);
 
     await container.start();
     stream.write(serializeEvent(spec));
