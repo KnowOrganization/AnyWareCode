@@ -21,6 +21,7 @@ import {
 	budgetForVerify,
 	buildRepairPrompt,
 	detectChecks,
+	installDeps,
 	runChecks,
 } from "./verify.js";
 
@@ -186,6 +187,20 @@ async function main(): Promise<void> {
 		// Escalate to the stronger model only after this many failed repairs (cost).
 		const escalateAfter = Number(process.env.VERIFY_ESCALATE_AFTER ?? "1");
 		const maxAttempts = spec.verify.maxRepairAttempts ?? 0;
+		// Best-effort install so checks have their deps (no-op if vendored / non-JS
+		// / out of time). Failure leaves node_modules absent → detectChecks skips.
+		const installBudget = budgetForVerify(deadlineMs, Date.now());
+		if (installBudget.canRun) {
+			const r = await installDeps(workdir, installBudget.perCheckTimeoutMs);
+			if (!r.installed && r.reason) {
+				emit({
+					type: "check",
+					name: "install",
+					passed: true,
+					summary: `dependency install skipped — ${r.reason}`,
+				});
+			}
+		}
 		for (let attempt = 0; !aborted; attempt++) {
 			const detection = detectChecks(workdir, spec);
 			if (detection.skipped) {
@@ -291,25 +306,39 @@ function flushAndExit(code: number): never | void {
 	setTimeout(done, 2000).unref(); // safety: never hang if drain never fires
 }
 
+// Set once main() has resolved/rejected (or a handler has fired). After this the
+// run's outcome — `done` or `error` — has already been emitted, so a late crash
+// (e.g. a stray rejection from a best-effort `.catch`, or closeTranslator) must
+// NOT emit a second, contradictory event or call flushAndExit again.
+let finished = false;
+
 // Last-resort handlers: an uncaught exception or unhandled rejection (e.g. a
 // crash in the SDK subprocess wiring or the translator sidecar) would otherwise
 // exit the process silently — the bot then sees no "done"/"error" event and
 // reports the opaque "agent stopped unexpectedly". Emit a redacted error first so
 // the failure is always attributable, then tear down and flush.
-process.on("uncaughtException", (err: unknown) => {
-	const m = err instanceof Error ? (err.stack ?? err.message) : String(err);
-	emit({ type: "error", message: redactSecrets(`uncaught exception: ${m}`) });
+function onFatal(label: string, value: unknown): void {
+	if (finished) return; // outcome already emitted — don't double-emit/exit
+	finished = true;
+	const m =
+		value instanceof Error ? (value.stack ?? value.message) : String(value);
+	emit({ type: "error", message: redactSecrets(`${label}: ${m}`) });
 	void closeTranslator().finally(() => flushAndExit(1));
-});
-process.on("unhandledRejection", (reason: unknown) => {
-	const m = reason instanceof Error ? (reason.stack ?? reason.message) : String(reason);
-	emit({ type: "error", message: redactSecrets(`unhandled rejection: ${m}`) });
-	void closeTranslator().finally(() => flushAndExit(1));
-});
+}
+process.on("uncaughtException", (err) => onFatal("uncaught exception", err));
+process.on("unhandledRejection", (reason) =>
+	onFatal("unhandled rejection", reason),
+);
 
 main()
-	.then(() => flushAndExit(0))
+	.then(() => {
+		if (finished) return;
+		finished = true;
+		flushAndExit(0);
+	})
 	.catch((err: unknown) => {
+		if (finished) return;
+		finished = true;
 		const raw = err instanceof Error ? err.message : String(err);
 		emit({ type: "error", message: redactSecrets(raw) });
 		void closeTranslator().finally(() => flushAndExit(1));

@@ -2,7 +2,12 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { budgetForVerify, buildRepairPrompt, detectChecks } from "./verify.js";
+import {
+  budgetForVerify,
+  buildRepairPrompt,
+  detectChecks,
+  installDeps,
+} from "./verify.js";
 import { createTaskSpec as spec } from "./test-fixtures.js";
 
 function tmp(): string {
@@ -16,6 +21,33 @@ function withNodeModules(dir: string): void {
 function pkg(dir: string, scripts: Record<string, string>): void {
   writeFileSync(path.join(dir, "package.json"), JSON.stringify({ scripts }));
 }
+
+describe("installDeps", () => {
+  it("returns not-installed for a non-JS repo (no package.json), never throws", async () => {
+    const dir = tmp();
+    const r = await installDeps(dir, 1000);
+    expect(r.installed).toBe(false);
+    expect(r.reason).toContain("package.json");
+  });
+
+  it("treats an already-vendored node_modules as installed without running a PM", async () => {
+    const dir = tmp();
+    pkg(dir, {});
+    withNodeModules(dir);
+    const r = await installDeps(dir, 1000);
+    expect(r.installed).toBe(true);
+  });
+
+  it("fails soft (no throw, node_modules absent) when install can't complete", async () => {
+    const dir = tmp();
+    // package.json present, no node_modules, 1ms timeout → the PM is killed.
+    pkg(dir, {});
+    const r = await installDeps(dir, 1);
+    expect(r.installed).toBe(false);
+    // detectChecks then skips exactly as before — verify stays best-effort.
+    expect(detectChecks(dir, spec({})).skipped).toBe(true);
+  });
+});
 
 describe("detectChecks", () => {
   it("detects allowlisted package.json scripts in run order", () => {

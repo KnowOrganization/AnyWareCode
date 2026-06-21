@@ -47,6 +47,55 @@ function runVerb(pm: "pnpm" | "yarn" | "npm", key: string): string[] {
   return pm === "yarn" ? [pm, key] : [pm, "run", key];
 }
 
+function installArgs(pm: "pnpm" | "yarn" | "npm"): string[] {
+  // Non-frozen: the agent may have edited package.json, so a lockfile mismatch
+  // must not hard-fail the install.
+  switch (pm) {
+    case "pnpm":
+      return ["install", "--no-frozen-lockfile"];
+    case "yarn":
+      return ["install"];
+    default:
+      return ["install", "--no-audit", "--no-fund"];
+  }
+}
+
+/**
+ * Best-effort dependency install so the project's checks can actually run. The
+ * prod egress allowlist permits the npm/yarn registries; in dev the runner has
+ * direct network. Failure (or a non-JS repo) is non-fatal — `node_modules` is
+ * simply left absent, so `detectChecks` skips verification exactly as before.
+ * Runs in the same hardened container that already executes untrusted repo code,
+ * so install scripts add no new trust boundary. Time-boxed by the caller.
+ */
+export async function installDeps(
+  workdir: string,
+  timeoutMs: number,
+): Promise<{ installed: boolean; reason?: string }> {
+  if (!existsSync(path.join(workdir, "package.json"))) {
+    return { installed: false, reason: "no package.json" };
+  }
+  if (existsSync(path.join(workdir, "node_modules"))) {
+    return { installed: true }; // already vendored
+  }
+  const pm = detectPackageManager(workdir);
+  try {
+    await execFileAsync(pm, installArgs(pm), {
+      cwd: workdir,
+      timeout: timeoutMs,
+      maxBuffer: 8 * 1024 * 1024,
+      env: process.env,
+    });
+    return { installed: existsSync(path.join(workdir, "node_modules")) };
+  } catch (err) {
+    const e = err as { stderr?: string; message?: string };
+    return {
+      installed: false,
+      reason: redactSecrets((e.stderr || e.message || "install failed").slice(-200)),
+    };
+  }
+}
+
 function readScripts(workdir: string): Record<string, string> | null {
   try {
     const raw = readFileSync(path.join(workdir, "package.json"), "utf8");

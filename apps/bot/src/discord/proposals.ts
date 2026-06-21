@@ -158,6 +158,7 @@ export async function handleProposalButton(
     await interaction.update({
       content: `~~${truncate(proposal.summary, 100)}~~ — dismissed by ${interaction.user.username}.`,
       components: [],
+      allowedMentions: { parse: [] },
     });
     return;
   }

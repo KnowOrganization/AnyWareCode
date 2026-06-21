@@ -588,10 +588,21 @@ export function startTranslator(
 			if (!upstream.ok) {
 				// Surface the provider's status so the SDK's own error handling (auth,
 				// rate-limit, model errors) classifies it; wrap the body in the
-				// Messages error envelope the SDK expects.
-				res.writeHead(upstream.status, {
+				// Messages error envelope the SDK expects. Forward the rate-limit
+				// signal so the host can compute a recovery time: OpenAI/OpenRouter
+				// send `retry-after` (seconds) on 429, which the bot's parser reads.
+				const errHeaders: Record<string, string> = {
 					"content-type": "application/json",
-				});
+				};
+				for (const h of [
+					"retry-after",
+					"anthropic-ratelimit-unified-reset",
+					"anthropic-ratelimit-unified-status",
+				]) {
+					const v = upstream.headers.get(h);
+					if (v) errHeaders[h] = v;
+				}
+				res.writeHead(upstream.status, errHeaders);
 				res.end(
 					anthropicError(
 						rawBody || `provider returned ${upstream.status}`,

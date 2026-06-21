@@ -235,6 +235,7 @@ export async function handlePlanVoteButton(
     await interaction.update({
       content: `~~${truncate(proposal.summary, 100)}~~ — plan rejected by ${interaction.user.username}.`,
       components: [],
+      allowedMentions: { parse: [] },
     });
     return;
   }

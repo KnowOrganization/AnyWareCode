@@ -85,6 +85,13 @@
 			"when": 1781580000000,
 			"tag": "0011_multi_provider_llm",
 			"breakpoints": true
+		},
+		{
+			"idx": 12,
+			"version": "7",
+			"when": 1781660000000,
+			"tag": "0012_task_charged",
+			"breakpoints": true
 		}
 	]
 }

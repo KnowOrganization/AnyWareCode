@@ -30,9 +30,11 @@ const PROBE_TIMEOUT_MS = 10_000;
 /** Per-guild probe cache window (Req 11.5). */
 const PROBE_CACHE_TTL_MS = 60_000;
 
-/** One probed Model_Tier and its classified outcome. */
+/** One probed Model_Tier and its classified outcome. The "model" tier is the
+ *  guild's single effective model, used for providers that pin their own model
+ *  (custom/openai/openrouter) instead of the three claude-* config tiers. */
 interface TierProbe {
-	tier: "chat" | "default" | "code";
+	tier: "chat" | "default" | "code" | "model";
 	model: string;
 	result: LlmCallResult;
 }
@@ -175,11 +177,20 @@ export async function handleLlmStatusCommand(
 
 	// 5) Probe each configured Model_Tier, each wrapped once by callWithRetry
 	//    with a 10s per-probe timeout (Req 11.2).
-	const tierSpecs: { tier: TierProbe["tier"]; model: string }[] = [
-		{ tier: "chat", model: ctx.config.CHAT_MODEL },
-		{ tier: "default", model: ctx.config.DEFAULT_MODEL },
-		{ tier: "code", model: ctx.config.CODE_MODEL },
-	];
+	// Providers that pin their own model (custom/openai/openrouter) don't use the
+	// claude-* config tiers — probing those would always fail with an invalid
+	// model id. Probe the guild's single effective model instead.
+	const pinsOwnModel =
+		auth.type === "custom" ||
+		auth.type === "openai" ||
+		auth.type === "openrouter";
+	const tierSpecs: { tier: TierProbe["tier"]; model: string }[] = pinsOwnModel
+		? [{ tier: "model", model: effModel }]
+		: [
+				{ tier: "chat", model: ctx.config.CHAT_MODEL },
+				{ tier: "default", model: ctx.config.DEFAULT_MODEL },
+				{ tier: "code", model: ctx.config.CODE_MODEL },
+			];
 	const maxRetryDelayMs = ctx.config.RETRY_MAX_DELAY_SECONDS * 1000;
 
 	const tiers: TierProbe[] = [];

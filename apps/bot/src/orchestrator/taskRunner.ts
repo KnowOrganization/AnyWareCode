@@ -217,6 +217,7 @@ export class TaskOrchestrator {
 			prompt: params.prompt,
 			requestedBy: params.requestedBy,
 			fundedBy: params.fundedBy ?? "plan",
+			charged: !params.planMode,
 			planApprovedBy: params.planApprovedBy ?? null,
 		});
 
@@ -653,7 +654,12 @@ export class TaskOrchestrator {
 		// code task launches only when someone clicks Implement.
 		if (params.planMode) {
 			await this.settle(task, "done");
-			if (planText?.trim()) {
+			// "(no content)" is the SDK's empty-output placeholder (a model that
+			// produced nothing / didn't tool-call). Don't render it as a real plan
+			// behind an Approve button — treat it as "no plan".
+			const tp = planText?.trim();
+			const realPlan = tp && tp !== "(no content)" ? tp : null;
+			if (realPlan) {
 				this.sweepPendingPlans();
 				this.pendingPlans.set(taskId, {
 					guildId: params.guildId,
@@ -665,7 +671,7 @@ export class TaskOrchestrator {
 					requestedBy: params.requestedBy,
 					requestedById: params.requestedById ?? null,
 					model: params.model ?? null,
-					planText: planText.trim(),
+					planText: realPlan,
 					createdAt: Date.now(),
 				});
 				await thread.send({
@@ -673,15 +679,17 @@ export class TaskOrchestrator {
 						new EmbedBuilder()
 							.setColor(0x5865f2)
 							.setTitle("📋 Proposed plan")
-							.setDescription(truncateForDiscord(planText.trim())),
+							.setDescription(truncateForDiscord(realPlan)),
 					],
 					components: [planApprovalButtons(taskId)],
 				});
 			} else {
+				const s = summary?.trim();
+				const realSummary = s && s !== "(no content)" ? s : null;
 				await thread.send(
-					summary
-						? `📋 ${truncateForDiscord(summary)}`
-						: "ℹ️ The agent finished planning without producing a plan.",
+					realSummary
+						? `📋 ${truncateForDiscord(realSummary)}`
+						: "ℹ️ The agent finished without producing a plan. Try rephrasing, or set a more capable model with `/model`.",
 				);
 			}
 			return out("done", { summary });
@@ -742,10 +750,16 @@ export class TaskOrchestrator {
 
 		if (sawDone && !pushed) {
 			await this.settle(task, "done");
+			// The agent SDK reports an empty turn as the literal "(no content)";
+			// don't echo that — it reads as a bug. Only show a summary when it
+			// actually says something.
+			const trimmed = summary?.trim();
+			const meaningful =
+				trimmed && trimmed !== "(no content)" ? trimmed : null;
 			await thread.send(
-				summary
-					? `ℹ️ No changes were pushed. ${truncateForDiscord(summary)}`
-					: "ℹ️ The agent finished without making changes.",
+				meaningful
+					? `ℹ️ The agent finished without pushing changes:\n${truncateForDiscord(meaningful)}`
+					: "ℹ️ The agent reviewed the repo but made no changes — nothing to push.",
 			);
 			return out("done", { summary });
 		}

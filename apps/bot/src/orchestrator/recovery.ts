@@ -14,10 +14,15 @@ export async function recoverStaleTasks(
     .returning();
 
   for (const task of stale) {
-    await refundUsage(db, task.guildId, task.mode, task.fundedBy);
+    // Plan-mode runs were never charged — refunding would mint free quota.
+    if (task.charged) {
+      await refundUsage(db, task.guildId, task.mode, task.fundedBy);
+    }
     await notify(
       task.threadId,
-      "⚠️ Bot restarted mid-task. Task marked failed and quota refunded — rerun `/code` to retry.",
+      task.charged
+        ? "⚠️ Bot restarted mid-task. Task marked failed and quota refunded — rerun `/code` to retry."
+        : "⚠️ Bot restarted mid-task. Task marked failed — rerun to retry.",
     ).catch(() => {});
   }
 }

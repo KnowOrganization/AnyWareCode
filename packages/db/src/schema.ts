@@ -196,6 +196,10 @@ export const tasks = pgTable("tasks", {
 	fundedBy: text("funded_by", { enum: ["plan", "pack"] })
 		.notNull()
 		.default("plan"),
+	/** Whether a quota unit was actually spent. Plan-mode (propose-a-plan) runs
+	 * are free, so the boot recovery sweep must NOT refund them — it has no
+	 * in-memory `charged` flag, only this row. */
+	charged: boolean("charged").notNull().default(true),
 	/** Provenance: who approved the plan vote (null = instant mode). */
 	planApprovedBy: text("plan_approved_by"),
 	/** Per-file change stats; lets squad vote cards rebuild after a restart. */

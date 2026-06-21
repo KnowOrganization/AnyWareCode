@@ -256,6 +256,26 @@ describe("status rendering — provider + effective model (Req 9.1, 9.2, 9.6)", 
 		expect(content).toContain("gpt-4o-mini");
 	});
 
+	it("probes only the guild's effective model for pin-own-model providers (not claude tiers)", async () => {
+		vi.mocked(resolveLlmAuth).mockResolvedValue({
+			auth: {
+				type: "openrouter",
+				token: "sk-or",
+				model: "anthropic/claude-3.5-sonnet",
+			},
+			source: "guild",
+		});
+		const probed: string[] = [];
+		const probe = vi.fn(async (args: { model: string }) => {
+			probed.push(args.model);
+			return okResult();
+		});
+		const { interaction } = makeInteraction({ admin: true });
+		await handleLlmStatusCommand(ctx, interaction, { probe });
+		expect(probed).toEqual(["anthropic/claude-3.5-sonnet"]);
+		expect(probed).not.toContain(config.CHAT_MODEL);
+	});
+
 	it("reports the retrieval failure / reconnect path when the credential is unreadable (Req 9.6)", async () => {
 		vi.mocked(resolveLlmAuth).mockResolvedValue({
 			auth: null,
