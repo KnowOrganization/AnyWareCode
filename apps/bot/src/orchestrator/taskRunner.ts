@@ -441,6 +441,12 @@ export class TaskOrchestrator {
 		if (this.config.RUNNER_HTTPS_PROXY) {
 			env.HTTPS_PROXY = this.config.RUNNER_HTTPS_PROXY;
 			env.HTTP_PROXY = this.config.RUNNER_HTTPS_PROXY;
+			// The OpenAI/OpenRouter translation sidecar binds 127.0.0.1; the SDK
+			// (axios) honors NO_PROXY, so without this it would route the localhost
+			// translator call through the egress proxy (plain HTTP, not allowlisted)
+			// and the task would die before reaching the provider.
+			env.NO_PROXY = "127.0.0.1,localhost";
+			env.no_proxy = "127.0.0.1,localhost";
 		}
 
 		let handle: WorkspaceHandle;

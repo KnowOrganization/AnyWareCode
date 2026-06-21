@@ -5,3 +5,5 @@
 ^api\.github\.com$
 ^codeload\.github\.com$
 ^([a-z0-9-]+\.)?githubusercontent\.com$
+^api\.openai\.com$
+^openrouter\.ai$

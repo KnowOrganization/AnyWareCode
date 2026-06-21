@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
+import { ProxyAgent } from "undici";
 
 /**
  * Messages↔Chat-Completions translation sidecar.
@@ -522,6 +523,14 @@ export function startTranslator(
 	const fetchFn = opts.fetchFn ?? fetch;
 	const upstreamUrl = `${trimTrailingSlash(opts.upstreamBaseUrl)}/v1/chat/completions`;
 
+	// In prod the runner is on an internal-only network whose sole exit is the
+	// egress proxy. Node's global `fetch` (undici) ignores HTTPS_PROXY, so the
+	// upstream provider call must be dispatched explicitly through a ProxyAgent;
+	// without it the request has no route off the container. NO_PROXY is not
+	// consulted here because the upstream host is always the remote provider.
+	const proxyUrl = process.env.HTTPS_PROXY ?? process.env.https_proxy;
+	const dispatcher = proxyUrl ? new ProxyAgent(proxyUrl) : undefined;
+
 	const server: Server = createServer((req, res) => {
 		void (async () => {
 			// Cheap reachability probe for preflight/health checks.
@@ -564,7 +573,10 @@ export function startTranslator(
 						...(opts.extraHeaders ?? {}),
 					},
 					body: JSON.stringify(chatReq),
-				});
+					// undici reads `dispatcher` off the init even though it's absent
+					// from the DOM RequestInit type; route through the egress proxy.
+					...(dispatcher ? { dispatcher } : {}),
+				} as RequestInit);
 			} catch (err) {
 				const message = err instanceof Error ? err.message : String(err);
 				res.writeHead(502, { "content-type": "application/json" });

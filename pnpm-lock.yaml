@@ -90,6 +90,9 @@ importers:
       '@anywarecode/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      undici:
+        specifier: ^6.21.0
+        version: 6.24.1
       zod:
         specifier: ^3.25.0
         version: 3.25.76
