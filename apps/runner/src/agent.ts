@@ -226,6 +226,23 @@ interface QueuedMessage {
   text: string;
 }
 
+/**
+ * The per-task model override to pass to the SDK, or `undefined` when the
+ * provider pins its own model. Providers that carry their own model (custom +
+ * OpenAI-compatible) run it via `ANTHROPIC_MODEL`; the per-task override is a
+ * claude-* id (e.g. CODE_MODEL `claude-opus-4-8`) that is meaningless to them
+ * and would be forwarded verbatim — OpenRouter rejects it with
+ * "claude-opus-4-8 is not a valid model ID". The override is honored only for
+ * first-party Anthropic auth.
+ */
+export function overrideModelFor(spec: TaskSpec): string | undefined {
+  const pinsOwnModel =
+    spec.llmAuth.type === "custom" ||
+    spec.llmAuth.type === "openai" ||
+    spec.llmAuth.type === "openrouter";
+  return pinsOwnModel ? undefined : spec.model?.trim() || undefined;
+}
+
 export class ClaudeAgent implements Agent {
   private inbox = new AsyncQueue<QueuedMessage>();
   private cancelled = false;
@@ -287,10 +304,7 @@ export class ClaudeAgent implements Agent {
       ...toolsFor(spec.mode),
       ...spec.mcpServers.map((s) => `mcp__${s.name}`),
     ];
-    // Custom providers pin their own model via ANTHROPIC_MODEL; for first-party
-    // auth, honor the per-task model override.
-    const model =
-      spec.llmAuth.type === "custom" ? undefined : spec.model?.trim() || undefined;
+    const model = overrideModelFor(spec);
     const maxTurns = Number(process.env.MAX_AGENT_TURNS) || undefined;
 
     const stream = query({

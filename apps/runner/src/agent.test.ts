@@ -6,9 +6,37 @@ import {
   buildSystemAppend,
   detectGameEngine,
   detectStack,
+  overrideModelFor,
   sdkMessageToEvents,
 } from "./agent.js";
 import { createTaskSpec as specWith } from "./test-fixtures.js";
+
+describe("overrideModelFor", () => {
+  it("honors the per-task override for first-party Anthropic auth", () => {
+    expect(
+      overrideModelFor(
+        specWith({
+          llmAuth: { type: "anthropic_api_key", token: "sk" },
+          model: "claude-opus-4-8",
+        }),
+      ),
+    ).toBe("claude-opus-4-8");
+  });
+
+  it("ignores the override for providers that pin their own model", () => {
+    // openai/openrouter/custom run their model via ANTHROPIC_MODEL; a claude-*
+    // override must NOT be forwarded (OpenRouter would 400 on it).
+    for (const llmAuth of [
+      { type: "openai", token: "k", model: "openrouter/auto" },
+      { type: "openrouter", token: "k", model: "anthropic/claude-3.5-sonnet" },
+      { type: "custom", token: "k", baseUrl: "https://x", model: "m" },
+    ] as const) {
+      expect(
+        overrideModelFor(specWith({ llmAuth, model: "claude-opus-4-8" })),
+      ).toBeUndefined();
+    }
+  });
+});
 
 function assistant(content: unknown[]): unknown {
   return { type: "assistant", message: { content } };

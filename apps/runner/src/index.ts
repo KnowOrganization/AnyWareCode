@@ -221,10 +221,14 @@ async function main(): Promise<void> {
 
 			// Repair turn: fresh agent, same tree. Early repairs reuse the run's
 			// model; escalate to the stronger model only after `escalateAfter` tries.
+			// Providers that pin their own model (custom + OpenAI-compatible) can't
+			// escalate to a claude-* repair model — it isn't a valid id for them.
+			const pinsOwnModel =
+				spec.llmAuth.type === "custom" ||
+				spec.llmAuth.type === "openai" ||
+				spec.llmAuth.type === "openrouter";
 			const escalate =
-				Boolean(repairModel) &&
-				spec.llmAuth.type !== "custom" &&
-				attempt >= escalateAfter;
+				Boolean(repairModel) && !pinsOwnModel && attempt >= escalateAfter;
 			const useModel = escalate ? repairModel : spec.model;
 			if (escalate && repairModel !== spec.model) {
 				emit({ type: "model_changed", model: repairModel! });
