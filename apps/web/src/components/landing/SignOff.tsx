@@ -48,8 +48,11 @@ export function SignOff() {
           </p>
           <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <Magnetic>
-              <Cta href={site.INSTALL_URL} className="h-14 px-9">
-                Add to Discord →
+              <Cta
+                href={site.BETA ? site.WAITLIST_HREF : site.INSTALL_URL}
+                className="h-14 px-9"
+              >
+                {site.BETA ? "Join the waitlist →" : "Add to Discord →"}
               </Cta>
             </Magnetic>
             <Cta href="#pricing" variant="outline" className="h-14 px-9">

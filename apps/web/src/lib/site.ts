@@ -12,6 +12,11 @@ export const INSTALL_URL =
 
 export const GITHUB_URL = "https://github.com";
 
+/** Beta: every plan shown as $0, CTAs route to the waitlist. Flip to false to
+ * restore paid prices + Discord install across the whole site. */
+export const BETA = true;
+export const WAITLIST_HREF = "#waitlist";
+
 export const nav = [
   { label: "Features", href: "#features" },
   { label: "How it works", href: "#how" },

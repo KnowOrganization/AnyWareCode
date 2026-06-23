@@ -41,9 +41,14 @@ export function Receipts() {
                     {t.name}
                   </span>
                 </p>
-                <div className="mt-5 flex items-baseline gap-1">
+                <div className="mt-5 flex items-baseline gap-2">
+                  {site.BETA && (
+                    <span className="font-display text-2xl font-bold tracking-tight text-faint line-through">
+                      {t.price}
+                    </span>
+                  )}
                   <span className="font-display text-5xl font-bold tracking-tight">
-                    {t.price}
+                    {site.BETA ? "$0" : t.price}
                   </span>
                   <span className="font-mono text-sm text-faint">{t.period}</span>
                 </div>
@@ -66,11 +71,11 @@ export function Receipts() {
                 <div className="rule-dash mt-6" />
 
                 <Cta
-                  href={site.INSTALL_URL}
+                  href={site.BETA ? site.WAITLIST_HREF : site.INSTALL_URL}
                   variant={t.featured ? "solid" : "outline"}
                   className="mt-7 w-full"
                 >
-                  {t.cta}
+                  {site.BETA ? "Join waitlist" : t.cta}
                 </Cta>
                 <p
                   aria-hidden
@@ -83,6 +88,11 @@ export function Receipts() {
               {t.featured && (
                 <span className="stamp absolute -top-3 right-5 rotate-6">
                   Recommended
+                </span>
+              )}
+              {site.BETA && (
+                <span className="stamp absolute -top-3 left-5 -rotate-6 text-primary">
+                  Free in beta
                 </span>
               )}
             </div>
@@ -101,8 +111,11 @@ export function Receipts() {
                 {site.taskPack.blurb}
               </p>
             </div>
-            <Cta href={site.INSTALL_URL} variant="outline">
-              Buy in Discord
+            <Cta
+              href={site.BETA ? site.WAITLIST_HREF : site.INSTALL_URL}
+              variant="outline"
+            >
+              {site.BETA ? "Join waitlist" : "Buy in Discord"}
             </Cta>
           </div>
         </Reveal>

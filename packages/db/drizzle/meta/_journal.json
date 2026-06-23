@@ -92,6 +92,13 @@
 			"when": 1781660000000,
 			"tag": "0012_task_charged",
 			"breakpoints": true
+		},
+		{
+			"idx": 13,
+			"version": "7",
+			"when": 1781740000000,
+			"tag": "0013_waitlist",
+			"breakpoints": true
 		}
 	]
 }

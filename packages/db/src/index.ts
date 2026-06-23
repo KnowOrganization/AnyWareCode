@@ -231,6 +231,25 @@ export async function markPackPurchaseAnnounced(
     .where(eq(schema.taskPackPurchases.id, id));
 }
 
+// --- Beta waitlist ---
+
+export async function addWaitlistSignup(
+  db: Db,
+  email: string,
+  source?: string,
+): Promise<void> {
+  await db
+    .insert(schema.waitlistSignups)
+    .values({ email, source: source ?? null })
+    .onConflictDoNothing({ target: schema.waitlistSignups.email });
+}
+
+export async function listWaitlist(db: Db) {
+  return db.query.waitlistSignups.findMany({
+    orderBy: desc(schema.waitlistSignups.createdAt),
+  });
+}
+
 // --- App settings (runtime flags) ---
 
 export async function getSetting(db: Db, key: string): Promise<unknown> {
@@ -633,4 +652,5 @@ export type {
   Squad,
   RazorpayWebhookEvent,
   AdminAuditLog,
+  WaitlistSignup,
 } from "./schema.js";

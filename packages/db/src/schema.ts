@@ -281,6 +281,16 @@ export const taskPackPurchases = pgTable("task_pack_purchases", {
 		.defaultNow(),
 });
 
+/** Beta waitlist email signups. Email is PK → dedup is free. */
+export const waitlistSignups = pgTable("waitlist_signups", {
+	email: text("email").primaryKey(),
+	source: text("source"),
+	createdAt: timestamp("created_at", { withTimezone: true })
+		.notNull()
+		.defaultNow(),
+});
+export type WaitlistSignup = typeof waitlistSignups.$inferSelect;
+
 /** Operator-flippable runtime flags (e.g. claude_oauth kill switch). */
 export const appSettings = pgTable("app_settings", {
 	key: text("key").primaryKey(),

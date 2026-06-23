@@ -12,6 +12,7 @@ import { Entries } from "@/components/landing/Entries";
 import { Pipeline } from "@/components/landing/Pipeline";
 import { ThreatModel } from "@/components/landing/ThreatModel";
 import { Receipts } from "@/components/landing/Receipts";
+import { Waitlist } from "@/components/landing/Waitlist";
 import { Faq } from "@/components/landing/Faq";
 import { SignOff } from "@/components/landing/SignOff";
 import { Footer } from "@/components/landing/Footer";
@@ -51,6 +52,7 @@ export default function Home() {
         />
         <ThreatModel />
         <Receipts />
+        <Waitlist />
         <Faq />
         <SignOff />
       </main>
